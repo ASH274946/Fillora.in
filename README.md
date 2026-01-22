@@ -1,9 +1,5 @@
 # Fillora.in - AI-Powered Form Assistant
 
-<div align="center">
-
-<img src="Logo.png" alt="Fillora Logo" width="200" height="200">
-
 **Forms, Filled in Seconds**
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yourusername/fillora)
@@ -11,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-Android-green.svg)](https://www.android.com)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[🌐 Website](https://spec-team-fazed.vercel.app/) • [📥 Download APK](https://www.upload-apk.com/en/Sv3n0Ecf8qkPP2m) • [📖 Documentation](#documentation) • [🐛 Report Bug](https://github.com/yourusername/fillora/issues)
+[📥 Download APK](https://www.upload-apk.com/en/Sv3n0Ecf8qkPP2m)
 
 </div>
 
