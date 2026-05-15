@@ -118,6 +118,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
   <p><b>Forms, Simplified. Privacy, Guaranteed.</b></p>
-  <p>Made with ❤️ by Team FazEd</p>
+  <p>Made with ❤️ by Ash</p>
   <a href="https://spec-team-fazed.vercel.app/">Website</a> • <a href="https://www.upload-apk.com/en/Sv3n0Ecf8qkPP2m">Download</a>
 </div>
