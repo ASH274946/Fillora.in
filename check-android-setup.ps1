@@ -41,4 +41,3 @@ Write-Host "   3. Allow USB debugging authorization on your phone" -ForegroundCo
 Write-Host "   4. Run: flutter devices" -ForegroundColor White
 Write-Host "   5. Run: flutter run" -ForegroundColor White
 Write-Host ""
-

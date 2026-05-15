@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/app_snackbar.dart';
 import '../services/auth_service.dart';
 import '../services/analytics_service.dart';
 import 'profile_screen.dart';
@@ -87,12 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Theme changed successfully!'),
-          duration: Duration(seconds: 1),
-        ),
-      );
+      AppSnackBar.show(context, 'Theme changed successfully!');
     }
   }
 
@@ -101,256 +97,248 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      extendBody: true,
       body: SafeArea(
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.only(
-                left: 24.0,
-                right: 24.0,
-                top: 24.0,
-                bottom: 100.0, // Add bottom padding for navigation
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        bottom: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(
+            left: 24.0,
+            right: 24.0,
+            top: 24.0,
+            bottom: 120.0, // Add bottom padding for navigation
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
                 children: [
-                  // Header
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: () {
-                          if (context.canPop()) {
-                            context.pop();
-                          } else {
-                            context.go('/dashboard');
-                          }
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Settings',
-                          style: theme.textTheme.displaySmall,
-                        ),
-                      ),
-                    ],
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/dashboard');
+                      }
+                    },
                   ),
-                  const SizedBox(height: 24),
-                  // Profile Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: _isLoadingProfile
-                          ? const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: CircularProgressIndicator(),
-                              ),
-                            )
-                          : Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 40,
-                                  backgroundColor: theme.colorScheme.primary,
-                                  backgroundImage: _userData?['photoUrl'] != null &&
-                                          (_userData!['photoUrl'] as String).isNotEmpty
-                                      ? NetworkImage(_userData!['photoUrl'] as String)
-                                      : null,
-                                  child: _userData?['photoUrl'] == null ||
-                                          (_userData!['photoUrl'] as String).isEmpty
-                                      ? Text(
-                                          _getInitials(_userData?['name'] as String?),
-                                          style: const TextStyle(
-                                            fontSize: 24,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : null,
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _userData?['name'] as String? ?? 'User',
-                                        style: theme.textTheme.titleLarge,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        _userData?['email'] as String? ?? 'No email',
-                                        style: theme.textTheme.bodySmall,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        '$_formsCompleted Forms Completed • Member since $_memberSince',
-                                        style: theme.textTheme.bodySmall,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Settings',
+                      style: theme.textTheme.displaySmall,
                     ),
                   ),
-                  const SizedBox(height: 32),
-                  // Settings Sections
-                  _SettingsSection(
-                    title: 'Account',
-                    items: [
-                      _SettingsItem(
-                        icon: Icons.person_outline,
-                        title: 'Profile',
-                        onTap: () async {
-                          await context.push('/profile');
-                          // Reload profile data after returning from profile screen
-                          _loadProfileData();
-                        },
-                      ),
-                      _SettingsItem(
-                        icon: Icons.lock_outline,
-                        title: 'Security',
-                        onTap: () {
-                          context.push('/security');
-                        },
-                      ),
-                      _SettingsItem(
-                        icon: Icons.notifications_outlined,
-                        title: 'Notifications',
-                        onTap: () {
-                          context.push('/notifications');
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                  _SettingsSection(
-                    title: 'Appearance',
-                    items: [
-                      _SettingsItem(
-                        icon: Icons.palette_outlined,
-                        title: 'Theme',
-                        trailing: SizedBox(
-                          width: 200,
-                          child: _ThemeSelector(
-                            currentTheme: _currentTheme,
-                            onThemeChanged: _changeTheme,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                  _SettingsSection(
-                    title: 'Support',
-                    items: [
-                      _SettingsItem(
-                        icon: Icons.help_outline,
-                        title: 'Help & Support',
-                        onTap: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Help & Support'),
-                              content: const Text(
-                                'For support, please contact us at:\n\nsupport@fillora.in\n\nWe are here to help you!',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(context).pop(),
-                                  child: const Text('OK'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                      _SettingsItem(
-                        icon: Icons.info_outline,
-                        title: 'About',
-                        onTap: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('About Fillora.in'),
-                              content: const Text(
-                                'Fillora.in - AI-powered Form Assistant\n\nVersion 1.0.0 (Beta)\n\nYour compassionate partner for effortless forms.',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(context).pop(),
-                                  child: const Text('OK'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                  // Logout Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        final shouldLogout = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Logout'),
-                            content: const Text('Are you sure you want to logout?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(false),
-                                child: const Text('Cancel'),
-                              ),
-                              ElevatedButton(
-                                onPressed: () => Navigator.of(context).pop(true),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red,
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: const Text('Logout'),
-                              ),
-                            ],
-                          ),
-                        );
-                        
-                        if (shouldLogout == true && mounted) {
-                          await _authService.signOut();
-                          if (mounted) {
-                            context.go('/signin');
-                          }
-                        }
-                      },
-                      icon: const Icon(Icons.logout, color: Colors.red),
-                      label: const Text('Logout', style: TextStyle(color: Colors.red)),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        side: const BorderSide(color: Colors.red, width: 1.5),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20), // Reduced from 100 since we have bottom padding
                 ],
               ),
-            ),
-            // Bottom Navigation - Fixed position at bottom
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: BottomNavigation(currentRoute: '/settings'),
-            ),
-          ],
+              const SizedBox(height: 24),
+              // Profile Card
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: _isLoadingProfile
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      : Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 40,
+                              backgroundColor: theme.colorScheme.primary,
+                              backgroundImage: _userData?['photoUrl'] != null &&
+                                      (_userData!['photoUrl'] as String).isNotEmpty
+                                  ? NetworkImage(_userData!['photoUrl'] as String)
+                                  : null,
+                              child: _userData?['photoUrl'] == null ||
+                                      (_userData!['photoUrl'] as String).isEmpty
+                                  ? Text(
+                                      _getInitials(_userData?['name'] as String?),
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _userData?['name'] as String? ?? 'User',
+                                    style: theme.textTheme.titleLarge,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _userData?['email'] as String? ?? 'No email',
+                                    style: theme.textTheme.bodySmall,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '$_formsCompleted Forms Completed • Member since $_memberSince',
+                                    style: theme.textTheme.bodySmall,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+              const SizedBox(height: 32),
+              // Settings Sections
+              _SettingsSection(
+                title: 'Account',
+                items: [
+                  _SettingsItem(
+                    icon: Icons.person_outline,
+                    title: 'Profile',
+                    onTap: () async {
+                      await context.push('/profile');
+                      // Reload profile data after returning from profile screen
+                      _loadProfileData();
+                    },
+                  ),
+                  _SettingsItem(
+                    icon: Icons.lock_outline,
+                    title: 'Security',
+                    onTap: () {
+                      context.push('/security');
+                    },
+                  ),
+                  _SettingsItem(
+                    icon: Icons.notifications_outlined,
+                    title: 'Notifications',
+                    onTap: () {
+                      context.push('/notifications');
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              _SettingsSection(
+                title: 'Appearance',
+                items: [
+                  _SettingsItem(
+                    icon: Icons.palette_outlined,
+                    title: 'Theme',
+                    trailing: SizedBox(
+                      width: 200,
+                      child: _ThemeSelector(
+                        currentTheme: _currentTheme,
+                        onThemeChanged: _changeTheme,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              _SettingsSection(
+                title: 'Support',
+                items: [
+                  _SettingsItem(
+                    icon: Icons.help_outline,
+                    title: 'Help & Support',
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Help & Support'),
+                          content: const Text(
+                            'For support, please contact us at:\n\nsupport@fillora.in\n\nWe are here to help you!',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('OK'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  _SettingsItem(
+                    icon: Icons.info_outline,
+                    title: 'About',
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('About Fillora.in'),
+                          content: const Text(
+                            'Fillora.in - AI-powered Form Assistant\n\nVersion 1.0.0 (Beta)\n\nYour compassionate partner for effortless forms.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('OK'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              // Logout Button
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final shouldLogout = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Logout'),
+                        content: const Text('Are you sure you want to logout?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(false),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.of(context).pop(true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Logout'),
+                          ),
+                        ],
+                      ),
+                    );
+                    
+                    if (shouldLogout == true && mounted) {
+                      await _authService.signOut();
+                      if (mounted) {
+                        context.go('/signin');
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.logout, color: Colors.red),
+                  label: const Text('Logout', style: TextStyle(color: Colors.red)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: const BorderSide(color: Colors.red, width: 1.5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
         ),
       ),
     );
+
   }
 }
 

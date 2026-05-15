@@ -22,13 +22,14 @@ class ActionCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Card(
+        margin: EdgeInsets.zero,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   border: Border.all(
                     color: primaryColor,
@@ -39,16 +40,21 @@ class ActionCard extends StatelessWidget {
                 child: Icon(
                   icon,
                   color: primaryColor,
-                  size: 32,
+                  size: 24,
                 ),
               ),
-              const SizedBox(height: 12),
-              Text(
-                label,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
+              const SizedBox(height: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 12,
+                  ),
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
-                textAlign: TextAlign.center,
               ),
             ],
           ),

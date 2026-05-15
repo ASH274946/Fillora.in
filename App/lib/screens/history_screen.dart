@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/app_snackbar.dart';
 import '../services/database_service.dart';
 import '../services/search_service.dart';
 import '../models/form_model.dart';
@@ -100,9 +101,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           _isLoading = false;
         });
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error loading forms: $e')),
-          );
+          AppSnackBar.show(context, 'Error loading forms: $e');
         }
       }
     }
@@ -285,23 +284,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
         }
         
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Form deleted successfully'),
-              duration: Duration(seconds: 2),
-            ),
-          );
+          AppSnackBar.show(context, 'Form deleted successfully');
         }
       } catch (e) {
         // If deletion fails, reload from database
         await _loadForms();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error deleting form: $e'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+          AppSnackBar.show(context, 'Error deleting form: $e', isError: true);
         }
       }
     }
@@ -312,219 +301,178 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      extendBody: true,
       resizeToAvoidBottomInset: false,
       body: SafeArea(
-        child: Stack(
+        bottom: false,
+        child: Column(
           children: [
-            Column(
-              children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: () {
-                          if (context.canPop()) {
-                            context.pop();
-                          } else {
-                            context.go('/dashboard');
-                          }
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Form History',
-                          style: theme.textTheme.displaySmall,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.search),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Search Forms'),
-                              content: TextField(
-                                controller: _searchController,
-                                autofocus: true,
-                                decoration: const InputDecoration(
-                                  hintText: 'Search forms...',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    Navigator.pop(context);
-                                  },
-                                  child: const Text('Clear'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text('Close'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/dashboard');
+                      }
+                    },
                   ),
-                ),
-                // Tabs
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _TabButton(
-                          label: 'All',
-                          count: _getFormCount('All'),
-                          isActive: _activeTab == 'All',
-                          onTap: () {
-                            AppLoggerService().logUserInteraction('Tab selected', details: 'All');
-                            setState(() {
-                              _activeTab = 'All';
-                            });
-                            _filterForms();
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _TabButton(
-                          label: 'In Progress',
-                          count: _getFormCount('In Progress'),
-                          isActive: _activeTab == 'In Progress',
-                          onTap: () {
-                            AppLoggerService().logUserInteraction('Tab selected', details: 'In Progress');
-                            setState(() {
-                              _activeTab = 'In Progress';
-                            });
-                            _filterForms();
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _TabButton(
-                          label: 'Completed',
-                          count: _getFormCount('Completed'),
-                          isActive: _activeTab == 'Completed',
-                          onTap: () {
-                            AppLoggerService().logUserInteraction('Tab selected', details: 'Completed');
-                            setState(() {
-                              _activeTab = 'Completed';
-                            });
-                            _filterForms();
-                          },
-                        ),
-                      ),
-                    ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Form History',
+                      style: theme.textTheme.displaySmall,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                // History List
-                Expanded(
-                  child: _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _filteredForms.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(32.0),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.history_outlined,
-                                      size: 64,
-                                      color: theme.colorScheme.onSurface.withOpacity(0.3),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      _allForms.isEmpty
-                                          ? 'No forms yet'
-                                          : 'No ${_activeTab.toLowerCase()} forms found',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      _allForms.isEmpty
-                                          ? 'Start filling out forms to see them here'
-                                          : 'Try selecting a different tab or clear your search',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: theme.colorScheme.onSurface.withOpacity(0.5),
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          : ListView(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                              children: [
-                                ..._filteredForms.map((form) {
-                                      // For completed/submitted forms, use submittedAt if available
-                                      // Otherwise use updatedAt or createdAt
-                                      // Also treat forms with 100% progress as completed
-                                      final isCompleted = form.status == 'completed' || 
-                                                          form.status == 'submitted' || 
-                                                          form.progress >= 100.0;
-                                      final dateToShow = isCompleted && form.submittedAt != null
-                                          ? form.submittedAt!
-                                          : (form.updatedAt ?? form.createdAt);
-                                      
-                                      return Padding(
-                                        key: ValueKey('form_${form.id}'),
-                                        padding: const EdgeInsets.only(bottom: 12),
-                                        child: _HistoryItem(
-                                          title: form.title,
-                                          date: _formatDate(dateToShow),
-                                          status: isCompleted
-                                              ? 'Completed'
-                                              : form.status == 'in_progress'
-                                                  ? '${form.progress.toInt()}%'
-                                                  : form.status,
-                                          isCompleted: isCompleted,
-                                          progress: form.progress < 100.0 ? (form.progress / 100.0) : null,
-                                          showDelete: _activeTab == 'In Progress',
-                                          onTap: () {
-                                            if (isCompleted) {
-                                              AppLoggerService().logFormAction('Opening form for review', 
-                                                formId: form.id,
-                                                formTitle: form.title);
-                                              context.go('/review?formId=${form.id}&from=history');
-                                            } else {
-                                              AppLoggerService().logFormAction('Opening form to fill', 
-                                                formId: form.id,
-                                                formTitle: form.title);
-                                              context.go('/conversational-form?formId=${form.id}&from=history');
-                                            }
-                                          },
-                                          onDelete: () => _showDeleteConfirmation(context, form),
-                                        ),
-                                      );
-                                    }),
-                                const SizedBox(height: 100),
-                              ],
-                            ),
-                ),
-              ],
+                ],
+              ),
             ),
-            // Bottom Navigation
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: BottomNavigation(currentRoute: '/history'),
+            // Tabs
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _TabButton(
+                      label: 'All',
+                      count: _getFormCount('All'),
+                      isActive: _activeTab == 'All',
+                      onTap: () {
+                        AppLoggerService().logUserInteraction('Tab selected', details: 'All');
+                        setState(() {
+                          _activeTab = 'All';
+                        });
+                        _filterForms();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _TabButton(
+                      label: 'In Progress',
+                      count: _getFormCount('In Progress'),
+                      isActive: _activeTab == 'In Progress',
+                      onTap: () {
+                        AppLoggerService().logUserInteraction('Tab selected', details: 'In Progress');
+                        setState(() {
+                          _activeTab = 'In Progress';
+                        });
+                        _filterForms();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _TabButton(
+                      label: 'Completed',
+                      count: _getFormCount('Completed'),
+                      isActive: _activeTab == 'Completed',
+                      onTap: () {
+                        AppLoggerService().logUserInteraction('Tab selected', details: 'Completed');
+                        setState(() {
+                          _activeTab = 'Completed';
+                        });
+                        _filterForms();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            // History List
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredForms.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.history_outlined,
+                                  size: 64,
+                                  color: theme.colorScheme.onSurface.withOpacity(0.3),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _allForms.isEmpty
+                                      ? 'No forms yet'
+                                      : 'No ${_activeTab.toLowerCase()} forms found',
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _allForms.isEmpty
+                                      ? 'Start filling out forms to see them here'
+                                      : 'Try selecting a different tab or clear your search',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurface.withOpacity(0.5),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                          children: [
+                            ..._filteredForms.map((form) {
+                                  // For completed/submitted forms, use submittedAt if available
+                                  // Otherwise use updatedAt or createdAt
+                                  // Also treat forms with 100% progress as completed
+                                  final isCompleted = form.status == 'completed' || 
+                                                      form.status == 'submitted' || 
+                                                      form.progress >= 100.0;
+                                  final dateToShow = isCompleted && form.submittedAt != null
+                                      ? form.submittedAt!
+                                      : (form.updatedAt ?? form.createdAt);
+                                  
+                                  return Padding(
+                                    key: ValueKey('form_${form.id}'),
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _HistoryItem(
+                                      title: form.title,
+                                      date: _formatDate(dateToShow),
+                                      status: isCompleted
+                                          ? 'Completed'
+                                          : form.status == 'in_progress'
+                                              ? '${form.progress.toInt()}%'
+                                              : form.status,
+                                      isCompleted: isCompleted,
+                                      progress: form.progress < 100.0 ? (form.progress / 100.0) : null,
+                                      showDelete: _activeTab == 'In Progress',
+                                      onTap: () {
+                                        if (isCompleted) {
+                                          AppLoggerService().logFormAction('Opening form for review', 
+                                            formId: form.id,
+                                            formTitle: form.title);
+                                          context.go('/review?formId=${form.id}&from=history');
+                                        } else {
+                                          AppLoggerService().logFormAction('Opening form to fill', 
+                                            formId: form.id,
+                                            formTitle: form.title);
+                                          context.go('/conversational-form?formId=${form.id}&from=history');
+                                        }
+                                      },
+                                      onDelete: () => _showDeleteConfirmation(context, form),
+                                    ),
+                                  );
+                                }),
+                            const SizedBox(height: 120), // Padding for the floating nav bar
+                          ],
+                        ),
             ),
           ],
         ),

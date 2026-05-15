@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/stat_card.dart';
 import '../widgets/action_card.dart';
 import '../services/analytics_service.dart';
@@ -26,6 +27,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _uuid = const Uuid();
   Map<String, dynamic>? _stats;
   List<FormModel> _recentForms = [];
+  List<Map<String, dynamic>> _popularTemplates = [];
   bool _isLoading = true;
 
   @override
@@ -51,9 +53,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     
-    // Load stats and recent forms in parallel
+    // Load stats, recent forms, and popular templates in parallel
     final stats = await _analytics.getDashboardStats();
     final allForms = await _db.getAllForms();
+    final popularTemplates = await _templateService.getPopularTemplates(limit: 4);
     
     // Get the 3 most recent forms
     final recentForms = allForms.take(3).toList();
@@ -61,6 +64,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _stats = stats;
       _recentForms = recentForms;
+      _popularTemplates = popularTemplates;
       _isLoading = false;
     });
   }
@@ -111,9 +115,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final template = await _templateService.getTemplateById(templateId);
       if (template == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Template not found')),
-          );
+          AppSnackBar.show(context, 'Template not found', isError: true);
         }
         return;
       }
@@ -211,9 +213,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error starting form: $e')),
-        );
+        AppSnackBar.show(context, 'An error occurred. Please try again later.', isError: true);
       }
     }
   }
@@ -228,294 +228,299 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final bottomNavHeight = 96 + bottomPadding;
 
     return Scaffold(
+      extendBody: true,
       body: SafeArea(
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              padding: EdgeInsets.only(
-                left: 24.0,
-                right: 24.0,
-                top: 24.0,
-                bottom: 24.0 + bottomNavHeight,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        bottom: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'My Forms',
-                              style: theme.textTheme.displaySmall,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'What form are we tackling today?',
-                              style: theme.textTheme.bodyMedium,
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 2,
-                            ),
-                          ],
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.notifications_outlined),
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('No new notifications'),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.person_outline),
-                            onPressed: () => context.go('/settings'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  // Quick Stats
-                  _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _stats == null
-                          ? const SizedBox()
-                          : Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: StatCard(
-                                    icon: Icons.check_circle_outline_rounded,
-                                    value: '${_stats!['completed'] ?? 0}',
-                                    label: 'Completed',
-                                    onTap: () {
-                                      context.go('/history?status=completed');
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: StatCard(
-                                    icon: Icons.trending_up_rounded,
-                                    value: '${_stats!['inProgress'] ?? 0}',
-                                    label: 'In Progress',
-                                    onTap: () {
-                                      context.go('/history?status=in_progress');
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: StatCard(
-                                    icon: Icons.access_time_rounded,
-                                    value: '${_stats!['totalTimeSaved'] ?? 0}m',
-                                    label: 'Time Saved',
-                                  ),
-                                ),
-                              ],
-                            ),
-                  const SizedBox(height: 32),
-                  // Quick Actions
-                  Text(
-                    'Quick Actions',
-                    style: theme.textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 16),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1.2,
-                    children: [
-                      ActionCard(
-                        icon: Icons.school_rounded,
-                        label: 'Scholarship',
-                        onTap: () => _startFormFromTemplate('scholarship'),
-                      ),
-                      ActionCard(
-                        icon: Icons.credit_card_rounded,
-                        label: 'Passport',
-                        onTap: () => _startFormFromTemplate('passport'),
-                      ),
-                      ActionCard(
-                        icon: Icons.cast_for_education_rounded,
-                        label: 'Admission',
-                        onTap: () => _startFormFromTemplate('admission'),
-                      ),
-                      ActionCard(
-                        icon: Icons.work_outline_rounded,
-                        label: 'Job Application',
-                        onTap: () => _startFormFromTemplate('job'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                  // AI Tip Card
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: theme.dividerColor,
-                      ),
-                    ),
-                    child: Row(
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.lightbulb_outline_rounded,
-                          color: theme.colorScheme.primary,
-                          size: 32,
+                        Text(
+                          'My Forms',
+                          style: theme.textTheme.displaySmall,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: RichText(
-                            text: TextSpan(
-                              style: theme.textTheme.bodyMedium,
-                              children: [
-                                const TextSpan(
-                                  text: 'Tip: ',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                const TextSpan(
-                                  text: 'First upload your documents for faster form filling !!!',
-                                ),
-                              ],
-                            ),
-                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'What form are we tackling today?',
+                          style: theme.textTheme.bodyMedium,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 32),
-                  // Recent Forms
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: Text(
-                          'Recent Forms',
-                          style: theme.textTheme.titleLarge,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      IconButton(
+                        icon: const Icon(Icons.notifications_outlined),
+                        onPressed: () {
+                          AppSnackBar.show(context, 'No new notifications');
+                        },
                       ),
-                      TextButton(
-                        onPressed: () => context.go('/history'),
-                        child: const Text('View All'),
+                      IconButton(
+                        icon: const Icon(Icons.person_outline),
+                        onPressed: () => context.go('/settings'),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  _recentForms.isEmpty
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32.0),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.description_outlined,
-                                  size: 64,
-                                  color: theme.colorScheme.onSurface.withOpacity(0.3),
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No forms yet',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    color: theme.colorScheme.onSurface.withOpacity(0.6),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Create your first form to get started',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurface.withOpacity(0.5),
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : Column(
+                ],
+              ),
+              const SizedBox(height: 24),
+              // Quick Stats
+              _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _stats == null
+                      ? const SizedBox()
+                      : Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            ...List.generate(
-                              _recentForms.length,
-                              (index) {
-                                final form = _recentForms[index];
-                                // Treat forms with 100% progress as completed
-                                final isCompleted = form.status == 'completed' || 
-                                                    form.status == 'submitted' || 
-                                                    form.progress >= 100.0;
-                                String dateText;
-                                if (form.submittedAt != null) {
-                                  final diff = DateTime.now().difference(form.submittedAt!);
-                                  if (diff.inDays == 0) {
-                                    dateText = 'Submitted today';
-                                  } else if (diff.inDays == 1) {
-                                    dateText = 'Submitted 1 day ago';
-                                  } else if (diff.inDays < 7) {
-                                    dateText = 'Submitted ${diff.inDays} days ago';
-                                  } else {
-                                    dateText = 'Submitted ${DateFormat('MMM d').format(form.submittedAt!)}';
-                                  }
-                                } else if (form.updatedAt != null) {
-                                  dateText = _formatDate(form.updatedAt!);
-                                } else {
-                                  dateText = _formatDate(form.createdAt);
-                                }
-                                
-                                return Padding(
-                                  padding: EdgeInsets.only(bottom: index < _recentForms.length - 1 ? 12 : 0),
-                                  child: _FormCard(
-                                    title: form.title,
-                                    date: dateText,
-                                    progress: form.progress,
-                                    status: _getStatusText(form),
-                                    isCompleted: isCompleted,
-                                    onTap: () {
-                                      if (isCompleted) {
-                                        AppLoggerService().logFormAction('Opening form for review from dashboard', 
-                                          formId: form.id,
-                                          formTitle: form.title);
-                                        context.go('/review?formId=${form.id}&from=dashboard');
-                                      } else {
-                                        AppLoggerService().logFormAction('Opening form to fill from dashboard', 
-                                          formId: form.id,
-                                          formTitle: form.title);
-                                        context.go('/conversational-form?formId=${form.id}&from=dashboard');
-                                      }
-                                    },
-                                  ),
-                                );
-                              },
+                            Expanded(
+                              child: StatCard(
+                                icon: Icons.check_circle_outline_rounded,
+                                value: '${_stats!['completed'] ?? 0}',
+                                label: 'Completed',
+                                onTap: () {
+                                  context.go('/history?status=completed');
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: StatCard(
+                                icon: Icons.trending_up_rounded,
+                                value: '${_stats!['inProgress'] ?? 0}',
+                                label: 'In Progress',
+                                onTap: () {
+                                  context.go('/history?status=in_progress');
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: StatCard(
+                                icon: Icons.access_time_rounded,
+                                value: '${_stats!['totalTimeSaved'] ?? 0}m',
+                                label: 'Time Saved',
+                              ),
                             ),
                           ],
                         ),
+              const SizedBox(height: 24),
+              // Quick Actions
+              Text(
+                'Quick Actions',
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              GridView.count(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.1,
+                children: _popularTemplates.isEmpty
+                    ? [
+                        ActionCard(
+                          icon: Icons.school_rounded,
+                          label: 'Scholarship',
+                          onTap: () => _startFormFromTemplate('scholarship'),
+                        ),
+                        ActionCard(
+                          icon: Icons.credit_card_rounded,
+                          label: 'Passport',
+                          onTap: () => _startFormFromTemplate('passport'),
+                        ),
+                        ActionCard(
+                          icon: Icons.cast_for_education_rounded,
+                          label: 'Admission',
+                          onTap: () => _startFormFromTemplate('admission'),
+                        ),
+                        ActionCard(
+                          icon: Icons.work_outline_rounded,
+                          label: 'Job Application',
+                          onTap: () => _startFormFromTemplate('job'),
+                        ),
+                      ]
+                    : _popularTemplates.map((template) {
+                        IconData icon;
+                        switch (template['icon']) {
+                          case 'school': icon = Icons.school_rounded; break;
+                          case 'flight': icon = Icons.flight_rounded; break;
+                          case 'cast_for_education': icon = Icons.cast_for_education_rounded; break;
+                          case 'work': icon = Icons.work_outline_rounded; break;
+                          case 'credit_card': icon = Icons.credit_card_rounded; break;
+                          case 'home': icon = Icons.home_rounded; break;
+                          case 'health_and_safety': icon = Icons.health_and_safety_rounded; break;
+                          case 'description': icon = Icons.description_rounded; break;
+                          case 'account_balance': icon = Icons.account_balance_rounded; break;
+                          case 'directions_car': icon = Icons.directions_car_rounded; break;
+                          default: icon = Icons.description_rounded;
+                        }
+                        return ActionCard(
+                          icon: icon,
+                          label: template['name'] as String,
+                          onTap: () => _startFormFromTemplate(template['id'] as String),
+                        );
+                      }).toList(),
+              ),
+              const SizedBox(height: 12),
+              // AI Tip Card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: theme.dividerColor,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.lightbulb_outline_rounded,
+                      color: theme.colorScheme.primary,
+                      size: 32,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: RichText(
+                        text: TextSpan(
+                          style: theme.textTheme.bodyMedium,
+                          children: [
+                            const TextSpan(
+                              text: 'Tip: ',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const TextSpan(
+                              text: 'First upload your documents for faster form filling !!!',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Recent Forms
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Recent Forms',
+                      style: theme.textTheme.titleLarge,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => context.go('/history'),
+                    child: const Text('View All'),
+                  ),
                 ],
               ),
-            ),
-            // Bottom Navigation
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: BottomNavigation(currentRoute: '/dashboard'),
-            ),
-          ],
+              const SizedBox(height: 16),
+              _recentForms.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.description_outlined,
+                              size: 64,
+                              color: theme.colorScheme.onSurface.withOpacity(0.3),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No forms yet',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Create your first form to get started',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface.withOpacity(0.5),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        ...List.generate(
+                          _recentForms.length,
+                          (index) {
+                            final form = _recentForms[index];
+                            // Treat forms with 100% progress as completed
+                            final isCompleted = form.status == 'completed' || 
+                                                form.status == 'submitted' || 
+                                                form.progress >= 100.0;
+                            String dateText;
+                            if (form.submittedAt != null) {
+                              final diff = DateTime.now().difference(form.submittedAt!);
+                              if (diff.inDays == 0) {
+                                dateText = 'Submitted today';
+                              } else if (diff.inDays == 1) {
+                                dateText = 'Submitted 1 day ago';
+                              } else if (diff.inDays < 7) {
+                                dateText = 'Submitted ${diff.inDays} days ago';
+                              } else {
+                                dateText = 'Submitted ${DateFormat('MMM d').format(form.submittedAt!)}';
+                              }
+                            } else if (form.updatedAt != null) {
+                              dateText = _formatDate(form.updatedAt!);
+                            } else {
+                              dateText = _formatDate(form.createdAt);
+                            }
+                            
+                            return Padding(
+                              padding: EdgeInsets.only(bottom: index < _recentForms.length - 1 ? 12 : 0),
+                              child: _FormCard(
+                                title: form.title,
+                                date: dateText,
+                                progress: form.progress,
+                                status: _getStatusText(form),
+                                isCompleted: isCompleted,
+                                onTap: () {
+                                  if (isCompleted) {
+                                    AppLoggerService().logFormAction('Opening form for review from dashboard', 
+                                      formId: form.id,
+                                      formTitle: form.title);
+                                    context.go('/review?formId=${form.id}&from=dashboard');
+                                  } else {
+                                    AppLoggerService().logFormAction('Opening form to fill from dashboard', 
+                                      formId: form.id,
+                                      formTitle: form.title);
+                                    context.go('/conversational-form?formId=${form.id}&from=dashboard');
+                                  }
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+              const SizedBox(height: 120), // Padding for the floating nav bar
+            ],
+          ),
         ),
       ),
     );

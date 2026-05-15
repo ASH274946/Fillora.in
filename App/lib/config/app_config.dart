@@ -35,6 +35,11 @@ class AppConfig {
   // Legacy Google Services (deprecated - will be removed)
   static const String geminiApiKey = 'AIzaSyCOy-XsT0McLiwRgXSfpccAHOaezwijqtY';
   
+  // NVIDIA NIM Configuration (OpenAI Compatible)
+  static const String nvidiaApiKey = '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';
+  static const String nvidiaBaseUrl = 'https://integrate.api.nvidia.com/v1';
+  static const String nvidiaModel = 'meta/llama-3.1-8b-instruct'; // Ultra-fast model
+  
   @Deprecated('Use Azure Speech Services instead')
   static const String sttApiKey = 'DEPRECATED';
 }

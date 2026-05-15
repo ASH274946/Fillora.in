@@ -5,6 +5,7 @@ import '../services/pdf_service.dart';
 import '../services/export_service.dart';
 import '../services/database_service.dart';
 import '../models/form_model.dart';
+import '../widgets/app_snackbar.dart';
 
 class ReviewScreen extends StatefulWidget {
   final String? formId;
@@ -52,9 +53,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           setState(() {
             _isLoading = false;
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Form not found')),
-          );
+          AppSnackBar.show(context, 'Form not found', isError: true);
         }
       }
     } catch (e) {
@@ -62,9 +61,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading form: $e')),
-        );
+        AppSnackBar.show(context, 'Error loading form: $e', isError: true);
       }
     }
   }
@@ -243,12 +240,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting form: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackBar.show(context, 'Error submitting form: $e', isError: true);
       }
     }
   }
@@ -332,7 +324,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
                                     padding: const EdgeInsets.only(bottom: 24),
                                     child: _ReviewSection(
                                       title: section['title'] as String,
-                                      fields: (section['fields'] as List<Map<String, String>>),
+                                      fields: (section['fields'] as List<Map<String, dynamic>>).map((f) => {
+                                        'label': f['label'] as String,
+                                        'value': f['value'] as String,
+                                      }).toList(),
                                     ),
                                   )),
                               const SizedBox(height: 32),
@@ -397,24 +392,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
                                         formData: formDataMap,
                                       );
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: const Text('PDF generated successfully!'),
-                                            action: SnackBarAction(
-                                              label: 'Share',
-                                              onPressed: () => pdfService.sharePdf(pdfFile),
-                                            ),
-                                          ),
-                                        );
+                                        AppSnackBar.show(context, 'PDF generated successfully!');
+                                        // You can add a manual share action if needed, but AppSnackBar is simple for now
                                       }
                                     } catch (e) {
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Error generating PDF: $e'),
-                                            duration: const Duration(seconds: 3),
-                                          ),
-                                        );
+                                        AppSnackBar.show(context, 'Error generating PDF: $e', isError: true);
                                       }
                                     }
                                   },
@@ -540,4 +523,3 @@ class _ReviewSection extends StatelessWidget {
     );
   }
 }
-

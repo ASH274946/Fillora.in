@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
 import '../widgets/bottom_navigation.dart';
+import '../widgets/app_snackbar.dart';
 import '../services/template_service.dart';
 import '../services/database_service.dart';
 import '../services/profile_autofill_service.dart';
@@ -68,9 +69,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
           _isLoading = false;
         });
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error loading templates: $e')),
-          );
+          AppSnackBar.show(context, 'Error loading templates: $e');
         }
       }
     }
@@ -120,294 +119,253 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      extendBody: true,
       resizeToAvoidBottomInset: false,
       body: SafeArea(
-        child: Stack(
+        bottom: false,
+        child: Column(
           children: [
-            Column(
-              children: [
-                // Header
-                Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: () {
-                          if (context.canPop()) {
-                            context.pop();
-                          } else {
-                            context.go('/dashboard');
-                          }
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Templates',
-                          style: theme.textTheme.displaySmall,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.search),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Search Templates'),
-                              content: TextField(
-                                controller: _searchController,
-                                autofocus: true,
-                                decoration: const InputDecoration(
-                                  hintText: 'Search templates...',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    Navigator.pop(context);
-                                  },
-                                  child: const Text('Clear'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text('Close'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+            // Header
+            Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/dashboard');
+                      }
+                    },
                   ),
-                ),
-                // Content
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Search Bar
-                        TextField(
-                          controller: _searchController,
-                          focusNode: _searchFocusNode,
-                          decoration: InputDecoration(
-                            hintText: 'Search templates...',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      _searchFocusNode.unfocus();
-                                    },
-                                  )
-                                : null,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Templates',
+                      style: theme.textTheme.displaySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Search Bar
+                    TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      decoration: InputDecoration(
+                        hintText: 'Search templates...',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _searchFocusNode.unfocus();
+                                },
+                              )
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        const SizedBox(height: 16),
-                        // Category Filter
-                        FutureBuilder<List<String>>(
-                          future: _templateService.getCategories(),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData) return const SizedBox();
-                            final categories = snapshot.data!;
-                            return SizedBox(
-                              height: 40,
-                              child: ListView(
-                                scrollDirection: Axis.horizontal,
-                                children: [
-                                  _CategoryChip(
-                                    label: 'All',
-                                    isSelected: _selectedCategory == null,
-                                    onTap: () => _selectCategory(null),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ...categories.map((category) => Padding(
-                                        padding: const EdgeInsets.only(right: 8),
-                                        child: _CategoryChip(
-                                          label: category,
-                                          isSelected: _selectedCategory == category,
-                                          onTap: () => _selectCategory(category),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Category Filter
+                    FutureBuilder<List<String>>(
+                      future: _templateService.getCategories(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) return const SizedBox();
+                        final categories = snapshot.data!;
+                        return SizedBox(
+                          height: 40,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            children: [
+                              _CategoryChip(
+                                label: 'All',
+                                isSelected: _selectedCategory == null,
+                                onTap: () => _selectCategory(null),
+                              ),
+                              const SizedBox(width: 8),
+                              ...categories.map((category) => Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: _CategoryChip(
+                                      label: category,
+                                      isSelected: _selectedCategory == category,
+                                      onTap: () => _selectCategory(category),
+                                    ),
+                                  )),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    // Featured Templates - Only show when search is not active
+                    if (!_isSearchActive) ...[
+                      Text(
+                        'Featured Templates',
+                        style: theme.textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 200,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _getFeaturedTemplates().length,
+                          itemBuilder: (context, index) {
+                            final featured = _getFeaturedTemplates()[index];
+                            return Container(
+                              width: 280,
+                              margin: const EdgeInsets.only(right: 12),
+                              child: Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        featured['icon'] as IconData,
+                                        size: 40,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        featured['title'] as String,
+                                        style: theme.textTheme.titleMedium,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        featured['description'] as String,
+                                        style: theme.textTheme.bodySmall,
+                                      ),
+                                      const Spacer(),
+                                      FilledButton(
+                                        onPressed: () async {
+                                          await _startFormFromFeatured(featured);
+                                        },
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: theme.brightness == Brightness.dark
+                                              ? theme.colorScheme.surface
+                                              : theme.colorScheme.primary,
+                                          foregroundColor: Colors.white,
+                                          minimumSize: const Size.fromHeight(40),
+                                          elevation: 0,
+                                          side: BorderSide(
+                                            color: theme.brightness == Brightness.dark
+                                                ? Colors.white.withOpacity(0.2)
+                                                : theme.colorScheme.primary.withOpacity(0.3),
+                                            width: 1,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
                                         ),
-                                      )),
-                                ],
+                                        child: const Text(
+                                          'Use Template',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             );
                           },
                         ),
-                        const SizedBox(height: 24),
-                        // Featured Templates - Only show when search is not active
-                        if (!_isSearchActive) ...[
-                          Text(
-                            'Featured Templates',
-                            style: theme.textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            height: 200,
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: _getFeaturedTemplates().length,
-                              itemBuilder: (context, index) {
-                                final featured = _getFeaturedTemplates()[index];
-                                return Container(
-                                  width: 280,
-                                  margin: const EdgeInsets.only(right: 12),
-                                  child: Card(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Icon(
-                                            featured['icon'] as IconData,
-                                            size: 40,
-                                            color: theme.colorScheme.primary,
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Text(
-                                            featured['title'] as String,
-                                            style: theme.textTheme.titleMedium,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            featured['description'] as String,
-                                            style: theme.textTheme.bodySmall,
-                                          ),
-                                          const Spacer(),
-                                          FilledButton(
-                                            onPressed: () async {
-                                              await _startFormFromFeatured(featured);
-                                            },
-                                            style: FilledButton.styleFrom(
-                                              backgroundColor: theme.brightness == Brightness.dark
-                                                  ? theme.colorScheme.surface
-                                                  : theme.colorScheme.primary,
-                                              foregroundColor: Colors.white,
-                                              minimumSize: const Size.fromHeight(40),
-                                              elevation: 0,
-                                              side: BorderSide(
-                                                color: theme.brightness == Brightness.dark
-                                                    ? Colors.white.withOpacity(0.2)
-                                                    : theme.colorScheme.primary.withOpacity(0.3),
-                                                width: 1,
-                                              ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
+                      ),
+                      const SizedBox(height: 32),
+                    ],
+                    // All Templates
+                    Text(
+                      'All Templates',
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 16),
+                    _isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _filteredTemplates.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No templates found',
+                                  style: theme.textTheme.bodyLarge,
+                                ),
+                              )
+                            : GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                  childAspectRatio: 0.9,
+                                ),
+                                itemCount: _filteredTemplates.length,
+                                itemBuilder: (context, index) {
+                                  final template = _filteredTemplates[index];
+                                  final iconName = template['icon'] as String? ?? 'description';
+                                  final icon = _getIconFromString(iconName);
+                                  return Card(
+                                    child: InkWell(
+                                      onTap: () async {
+                                        await _startFormFromTemplate(template);
+                                      },
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              icon,
+                                              size: 40,
+                                              color: theme.colorScheme.primary,
                                             ),
-                                            child: Text(
-                                              'Use Template',
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.white,
-                                              ),
+                                            const SizedBox(height: 12),
+                                            Text(
+                                              template['name'] as String,
+                                              style: theme.textTheme.bodyMedium,
+                                              textAlign: TextAlign.center,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                          ),
-                                        ],
+                                            if (template['usageCount'] != null &&
+                                                (template['usageCount'] as int) > 0)
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 4),
+                                                child: Text(
+                                                  '${template['usageCount']} uses',
+                                                  style: theme.textTheme.bodySmall?.copyWith(
+                                                    color: theme.colorScheme.primary,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 32),
-                        ],
-                        // All Templates
-                        Text(
-                          'All Templates',
-                          style: theme.textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 16),
-                        _isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : _filteredTemplates.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      'No templates found',
-                                      style: theme.textTheme.bodyLarge,
-                                    ),
-                                  )
-                                : GridView.builder(
-                                    shrinkWrap: true,
-                                    physics: const NeverScrollableScrollPhysics(),
-                                    gridDelegate:
-                                        const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 2,
-                                      crossAxisSpacing: 12,
-                                      mainAxisSpacing: 12,
-                                      childAspectRatio: 0.9,
-                                    ),
-                                    itemCount: _filteredTemplates.length,
-                                    itemBuilder: (context, index) {
-                                      final template = _filteredTemplates[index];
-                                      final iconName = template['icon'] as String? ?? 'description';
-                                      final icon = _getIconFromString(iconName);
-                                      return Card(
-                                        child: InkWell(
-                                          onTap: () async {
-                                            await _startFormFromTemplate(template);
-                                          },
-                                          borderRadius: BorderRadius.circular(16),
-                                          child: Padding(
-                                            padding: const EdgeInsets.all(16),
-                                            child: Column(
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              children: [
-                                                Icon(
-                                                  icon,
-                                                  size: 40,
-                                                  color: theme.colorScheme.primary,
-                                                ),
-                                                const SizedBox(height: 12),
-                                                Text(
-                                                  template['name'] as String,
-                                                  style: theme.textTheme.bodyMedium,
-                                                  textAlign: TextAlign.center,
-                                                  maxLines: 2,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                                if (template['usageCount'] != null &&
-                                                    (template['usageCount'] as int) > 0)
-                                                  Padding(
-                                                    padding: const EdgeInsets.only(top: 4),
-                                                    child: Text(
-                                                      '${template['usageCount']} uses',
-                                                      style: theme.textTheme.bodySmall?.copyWith(
-                                                        color: theme.colorScheme.primary,
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                        const SizedBox(height: 100),
-                      ],
-                    ),
-                  ),
+                                  );
+                                },
+                              ),
+                    const SizedBox(height: 120), // Padding for the floating nav bar
+                  ],
                 ),
-              ],
-            ),
-            // Bottom Navigation
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: BottomNavigation(currentRoute: '/templates'),
+              ),
             ),
           ],
         ),
@@ -450,9 +408,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
       await _startFormFromTemplate(template);
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Template not found')),
-        );
+        AppSnackBar.show(context, 'Template not found');
       }
     }
   }
@@ -566,9 +522,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error starting form: $e')),
-        );
+        AppSnackBar.show(context, 'Error starting form: $e', isError: true);
       }
     }
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../services/app_lock_service.dart';
+import '../widgets/app_snackbar.dart';
 
 class AppLockSetupScreen extends StatefulWidget {
   final String lockType; // 'pin' or 'password'
@@ -224,12 +225,7 @@ class _AppLockSetupScreenState extends State<AppLockSetupScreen> {
 
     if (success) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('PIN set successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        AppSnackBar.show(context, 'PIN set successfully!');
         context.pop(true);
       }
     } else {
@@ -281,12 +277,7 @@ class _AppLockSetupScreenState extends State<AppLockSetupScreen> {
 
     if (success) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password set successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        AppSnackBar.show(context, 'Password set successfully!');
         context.pop(true);
       }
     } else {

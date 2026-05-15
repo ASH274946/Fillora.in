@@ -8,6 +8,7 @@ import 'theme/app_theme.dart';
 import 'services/language_service.dart';
 import 'services/auth_service.dart';
 import 'widgets/back_button_handler.dart';
+import 'widgets/bottom_navigation.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -200,11 +201,6 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
     // Log lifecycle changes
     AppLoggerService().logAppLifecycle(state.toString());
     
-    // Lock app when it goes to background
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      _appLockService.lockApp();
-    }
-    
     _lastLifecycleState = state;
   }
 
@@ -226,7 +222,7 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
       
       // Calculate elapsed time
       final elapsedTime = DateTime.now().difference(initStartTime);
-      final minSplashDuration = const Duration(milliseconds: 2000);
+      final minSplashDuration = const Duration(milliseconds: 500);
       
       // Wait for minimum splash duration if initialization was too fast
       if (elapsedTime < minSplashDuration) {
@@ -234,7 +230,7 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
       }
       
       // Add a small delay for smooth fade out transition
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 100));
       
       if (mounted) {
         setState(() {
@@ -242,7 +238,7 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
         });
         
         // Wait a bit then fade out splash smoothly
-        Future.delayed(const Duration(milliseconds: 1800), () {
+        Future.delayed(const Duration(milliseconds: 800), () {
           if (mounted) {
             setState(() {
               _showSplash = false;
@@ -257,10 +253,10 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
       _router = _createRouter();
       
       // Ensure minimum splash duration even on error
-      await Future.delayed(const Duration(milliseconds: 2000));
+      await Future.delayed(const Duration(milliseconds: 500));
       
       // Add fade out delay
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 100));
       
       if (mounted) {
         setState(() {
@@ -358,55 +354,90 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
             child: SignUpScreen(),
           ),
         ),
-        GoRoute(
-          path: '/dashboard',
-          builder: (context, state) => const BackButtonHandler(
-            child: DashboardScreen(),
-          ),
-        ),
-        GoRoute(
-          path: '/templates',
-          builder: (context, state) => const BackButtonHandler(
-            child: TemplatesScreen(),
-          ),
-        ),
-        GoRoute(
-          path: '/history',
-          builder: (context, state) {
-            final status = state.uri.queryParameters['status'];
-            return BackButtonHandler(
-              child: HistoryScreen(initialStatus: status),
-            );
-          },
-        ),
-        GoRoute(
-          path: '/settings',
-          builder: (context, state) {
-            return BackButtonHandler(
-              child: SettingsScreen(
-                onThemeChanged: themeChangeCallback,
+        
+        // Stateful Navigation Shell for Tab Screens
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) {
+            return Scaffold(
+              body: navigationShell,
+              extendBody: true,
+              bottomNavigationBar: BottomNavigation(
+                navigationShell: navigationShell,
               ),
             );
           },
+          branches: [
+            // Dashboard Branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/dashboard',
+                  builder: (context, state) => const BackButtonHandler(
+                    child: DashboardScreen(),
+                  ),
+                ),
+              ],
+            ),
+            // Templates Branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/templates',
+                  builder: (context, state) => const BackButtonHandler(
+                    child: TemplatesScreen(),
+                  ),
+                ),
+              ],
+            ),
+            // History Branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/history',
+                  builder: (context, state) {
+                    final status = state.uri.queryParameters['status'];
+                    return BackButtonHandler(
+                      child: HistoryScreen(initialStatus: status),
+                    );
+                  },
+                ),
+              ],
+            ),
+            // Settings Branch
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/settings',
+                  builder: (context, state) => BackButtonHandler(
+                    child: SettingsScreen(onThemeChanged: themeChangeCallback),
+                  ),
+                  routes: [
+                    GoRoute(
+                      path: 'profile',
+                      builder: (context, state) => const BackButtonHandler(
+                        child: ProfileScreen(),
+                      ),
+                    ),
+                    GoRoute(
+                      path: 'security',
+                      builder: (context, state) => const BackButtonHandler(
+                        child: SecurityScreen(),
+                      ),
+                    ),
+                    GoRoute(
+                      path: 'notifications',
+                      builder: (context, state) => const BackButtonHandler(
+                        child: NotificationsScreen(),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
         ),
-        GoRoute(
-          path: '/profile',
-          builder: (context, state) => const BackButtonHandler(
-            child: ProfileScreen(),
-          ),
-        ),
-        GoRoute(
-          path: '/security',
-          builder: (context, state) => const BackButtonHandler(
-            child: SecurityScreen(),
-          ),
-        ),
-        GoRoute(
-          path: '/notifications',
-          builder: (context, state) => const BackButtonHandler(
-            child: NotificationsScreen(),
-          ),
-        ),
+
+        // Other top-level routes that don't have the navbar
         GoRoute(
           path: '/form-selection',
           builder: (context, state) => const BackButtonHandler(
@@ -457,10 +488,9 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
         return null;
       },
       redirect: (context, state) async {
-        // Log route changes - GoRouter calls redirect on every route change
+        // Log route changes
         final currentPath = state.uri.path.isNotEmpty ? state.uri.path : state.matchedLocation;
         if (currentPath.isNotEmpty && currentPath != _lastLoggedRoute) {
-          // Log navigation if route changed
           if (_lastLoggedRoute != null) {
             appLogger.logNavigation(_lastLoggedRoute!, currentPath, 
               params: state.uri.queryParameters);
@@ -469,39 +499,38 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
           _lastLoggedRoute = currentPath;
         }
         
-        // Log navigation redirects (when path differs from matched location)
-        if (state.uri.path != state.matchedLocation && 
-            state.matchedLocation.isNotEmpty && 
-            state.uri.path.isNotEmpty) {
-          appLogger.logNavigation(state.matchedLocation, state.uri.path, 
-            params: state.uri.queryParameters);
-        }
-        // Don't redirect if already on lock screen or setup screen
         if (state.uri.path == '/app-lock' || state.uri.path == '/app-lock-setup') {
           return null;
         }
         
-        // Don't redirect if on auth screens
         if (state.uri.path == '/onboarding' || 
             state.uri.path == '/signin' || 
             state.uri.path == '/signup') {
           return null;
         }
         
-        // Check if user is authenticated
         final isAuthenticated = await _authService.isAuthenticated();
         if (!isAuthenticated) {
-          return null; // Don't check app lock if not authenticated
+          return null;
         }
         
-        // Check if app lock is enabled and app is locked
         final appLockService = AppLockService();
         final isEnabled = await appLockService.isAppLockEnabled();
-        final isLocked = await appLockService.isAppLocked();
-        
-        // If app lock is enabled and app is locked, redirect to lock screen
-        if (isEnabled && isLocked) {
-          return '/app-lock';
+
+        final isSensitiveScreen = [
+          '/history',
+          '/settings/profile',
+          '/settings/security',
+          '/conversational-form',
+          '/review',
+          '/document-upload',
+        ].any((path) => state.uri.path.startsWith(path));
+
+        if (isEnabled && isSensitiveScreen) {
+          final shouldLock = await appLockService.shouldLock();
+          if (shouldLock) {
+            return '/app-lock';
+          }
         }
         
         return null;
@@ -513,11 +542,10 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final themeData = _appTheme.getTheme(_currentTheme);
     
-    // Show splash screen while loading or if explicitly set
     if (_showSplash || _isLoading || _router == null) {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: themeData, // Apply theme to splash screen
+        theme: themeData,
         locale: _currentLocale,
         supportedLocales: LanguageService.supportedLocales,
         localizationsDelegates: const [
@@ -528,9 +556,7 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
         home: SplashScreen(
           key: const ValueKey('splash'),
           theme: _currentTheme,
-          onInitializationComplete: () {
-            // This will be called when splash completes
-          },
+          onInitializationComplete: () {},
         ),
       );
     }
@@ -561,5 +587,3 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
     );
   }
 }
-
-

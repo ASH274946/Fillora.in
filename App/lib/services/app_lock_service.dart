@@ -108,6 +108,27 @@ class AppLockService {
     return isValid;
   }
 
+  static const int lockTimeoutMinutes = 2;
+
+  /// Check if app should lock based on time elapsed since last unlock
+  Future<bool> shouldLock() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isEnabled = prefs.getBool(_appLockEnabledKey) ?? false;
+    if (!isEnabled) return false;
+
+    final isLocked = prefs.getBool(_appLockedKey) ?? false;
+    if (isLocked) return true;
+
+    final lastUnlockStr = prefs.getString(_lastUnlockTimeKey);
+    if (lastUnlockStr == null) return true;
+
+    final lastUnlock = DateTime.parse(lastUnlockStr);
+    final now = DateTime.now();
+    final difference = now.difference(lastUnlock);
+
+    return difference.inMinutes >= lockTimeoutMinutes;
+  }
+
   /// Lock the app
   Future<void> lockApp() async {
     final prefs = await SharedPreferences.getInstance();

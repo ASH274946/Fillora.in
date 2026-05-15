@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import '../services/auth_service.dart';
 import '../services/analytics_service.dart';
+import '../widgets/app_snackbar.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -123,12 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (e) {
       print('Error loading profile: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading profile: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackBar.show(context, 'Error loading profile: $e', isError: true);
       }
     } finally {
       setState(() => _isLoading = false);
@@ -157,22 +153,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile updated successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        AppSnackBar.show(context, 'Profile updated successfully!');
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error updating profile: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackBar.show(context, 'Error updating profile: $e', isError: true);
       }
     } finally {
       if (mounted) {

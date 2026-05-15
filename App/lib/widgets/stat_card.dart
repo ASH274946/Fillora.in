@@ -70,6 +70,7 @@ class StatCard extends StatelessWidget {
       );
 
     return Card(
+      margin: EdgeInsets.zero,
       child: onTap != null
           ? InkWell(
               onTap: onTap,

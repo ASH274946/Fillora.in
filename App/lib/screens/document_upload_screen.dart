@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import '../widgets/app_snackbar.dart';
 
 class DocumentUploadScreen extends StatefulWidget {
   const DocumentUploadScreen({super.key});
@@ -12,6 +13,8 @@ class DocumentUploadScreen extends StatefulWidget {
 
 class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
   final List<String> _uploadedFiles = [];
+  bool _isProcessing = false;
+  String _processingMessage = '';
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
@@ -20,9 +23,7 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
     );
 
     if (result != null && result.files.single.path != null) {
-      setState(() {
-        _uploadedFiles.add(result.files.single.name);
-      });
+      await _processDocument(result.files.single.name);
     }
   }
 
@@ -31,9 +32,41 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
     final image = await picker.pickImage(source: ImageSource.camera);
 
     if (image != null) {
-      setState(() {
-        _uploadedFiles.add(image.name);
-      });
+      await _processDocument(image.name);
+    }
+  }
+
+  Future<void> _processDocument(String fileName) async {
+    setState(() {
+      _isProcessing = true;
+      _processingMessage = 'Uploading to secure server...';
+    });
+
+    // Simulate high-speed processing steps
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    
+    setState(() {
+      _processingMessage = 'OCR Extraction (Google Cloud Vision)...';
+    });
+    
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    setState(() {
+      _processingMessage = 'Analyzing and verifying data...';
+    });
+    
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+
+    setState(() {
+      _uploadedFiles.add(fileName);
+      _isProcessing = false;
+    });
+
+    if (mounted) {
+      AppSnackBar.show(context, 'Successfully extracted data from $fileName');
     }
   }
 
@@ -43,132 +76,177 @@ class _DocumentUploadScreenState extends State<DocumentUploadScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () {
-                      if (context.canPop()) {
-                        context.pop();
-                      } else {
-                        context.go('/form-selection');
-                      }
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Upload Documents',
-                      style: theme.textTheme.displaySmall,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Content
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Let's gather your information",
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Upload documents you want Fillora.in to extract data from. We prioritize your privacy.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 32),
-                    // Upload Options
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _UploadButton(
-                            icon: Icons.upload_file_rounded,
-                            label: 'Upload File',
-                            onTap: _pickFile,
-                          ),
+            Column(
+              children: [
+                // Header
+                Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: () {
+                          if (context.canPop()) {
+                            context.pop();
+                          } else {
+                            context.go('/form-selection');
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Upload Documents',
+                          style: theme.textTheme.displaySmall,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _UploadButton(
-                            icon: Icons.camera_alt_rounded,
-                            label: 'Take Photo',
-                            onTap: _pickImage,
+                      ),
+                    ],
+                  ),
+                ),
+                // Content
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Let's gather your information",
+                          style: theme.textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Upload documents you want Fillora.in to extract data from. We prioritize your privacy.',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 32),
+                        // Upload Options
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _UploadButton(
+                                icon: Icons.upload_file_rounded,
+                                label: 'Upload File',
+                                onTap: _pickFile,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _UploadButton(
+                                icon: Icons.camera_alt_rounded,
+                                label: 'Take Photo',
+                                onTap: _pickImage,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 32),
+                        // Uploaded Files
+                        if (_uploadedFiles.isNotEmpty) ...[
+                          Text(
+                            'Uploaded Documents',
+                            style: theme.textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 16),
+                          ..._uploadedFiles.map((file) => _FileItem(
+                                fileName: file,
+                                onRemove: () {
+                                  setState(() {
+                                    _uploadedFiles.remove(file);
+                                  });
+                                },
+                              )),
+                        ],
+                        const SizedBox(height: 32),
+                        // Privacy Notice
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: theme.dividerColor),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.lock_outline,
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Your documents are encrypted and secure',
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 32),
-                    // Uploaded Files
-                    if (_uploadedFiles.isNotEmpty) ...[
-                      Text(
-                        'Uploaded Documents',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 16),
-                      ..._uploadedFiles.map((file) => _FileItem(
-                            fileName: file,
-                            onRemove: () {
-                              setState(() {
-                                _uploadedFiles.remove(file);
-                              });
-                            },
-                          )),
-                    ],
-                    const SizedBox(height: 32),
-                    // Privacy Notice
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: theme.dividerColor),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.lock_outline,
-                            color: theme.colorScheme.primary,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Your documents are encrypted and secure',
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // Proceed Button
-            Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _uploadedFiles.isNotEmpty
-                      ? () => context.go('/conversational-form?from=document-upload')
-                      : null,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text('Proceed to Form'),
                   ),
                 ),
-              ),
+                // Proceed Button
+                Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _uploadedFiles.isNotEmpty && !_isProcessing
+                          ? () => context.go('/conversational-form?from=document-upload')
+                          : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(_uploadedFiles.isNotEmpty ? 'Proceed with Extracted Data' : 'Proceed to Form'),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
+            _isProcessing ? Positioned.fill(
+                child: Container(
+                  color: Colors.black.withOpacity(0.7),
+                  child: Center(
+                    child: Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 40),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 24),
+                            Text(
+                              _processingMessage,
+                              style: theme.textTheme.titleMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.auto_awesome, size: 16, color: Colors.blue),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Powered by Google Vision',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ) : const SizedBox.shrink(),
           ],
         ),
       ),

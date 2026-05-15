@@ -50,3 +50,18 @@ app.*.map.json
 /assets/icons/
 /assets/images/
 
+# Secrets and Credentials
+.env
+.env.*
+! .env.example
+*.jks
+*.keystore
+*.p12
+*.key
+*.pem
+*.properties
+google-services.json
+GoogleService-Info.plist
+local.properties
+key.properties
+

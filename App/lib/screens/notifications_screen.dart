@@ -73,270 +73,261 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      extendBody: true,
       body: SafeArea(
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.only(
-                left: 24.0,
-                right: 24.0,
-                top: 24.0,
-                bottom: 100.0,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        bottom: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(
+            left: 24.0,
+            right: 24.0,
+            top: 24.0,
+            bottom: 120.0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
                 children: [
-                  // Header
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: () {
-                          if (context.canPop()) {
-                            context.pop();
-                          } else {
-                            context.go('/settings');
-                          }
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () {
+                      if (context.canPop()) {
+                        context.pop();
+                      } else {
+                        context.go('/settings');
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Notifications',
+                      style: theme.textTheme.displaySmall,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              
+              if (_isLoading)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else ...[
+                // General Notifications Section
+                _NotificationSection(
+                  title: 'General',
+                  items: [
+                    _NotificationItem(
+                      icon: Icons.notifications_active_outlined,
+                      title: 'Push Notifications',
+                      subtitle: 'Receive notifications on your device',
+                      trailing: _buildSwitch(
+                        value: _pushNotificationsEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _pushNotificationsEnabled = value;
+                          });
+                          _saveNotificationSetting('push_notifications_enabled', value);
                         },
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Notifications',
-                          style: theme.textTheme.displaySmall,
-                        ),
+                    ),
+                    _NotificationItem(
+                      icon: Icons.email_outlined,
+                      title: 'Email Notifications',
+                      subtitle: 'Receive notifications via email',
+                      trailing: _buildSwitch(
+                        value: _emailNotificationsEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _emailNotificationsEnabled = value;
+                          });
+                          _saveNotificationSetting('email_notifications_enabled', value);
+                        },
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  
-                  if (_isLoading)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32.0),
-                        child: CircularProgressIndicator(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
+                
+                // Form Notifications Section
+                _NotificationSection(
+                  title: 'Form Notifications',
+                  items: [
+                    _NotificationItem(
+                      icon: Icons.alarm_outlined,
+                      title: 'Form Reminders',
+                      subtitle: 'Get reminded about incomplete forms',
+                      trailing: _buildSwitch(
+                        value: _formRemindersEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _formRemindersEnabled = value;
+                          });
+                          _saveNotificationSetting('form_reminders_enabled', value);
+                        },
                       ),
-                    )
-                  else ...[
-                    // General Notifications Section
-                    _NotificationSection(
-                      title: 'General',
-                      items: [
-                        _NotificationItem(
-                          icon: Icons.notifications_active_outlined,
-                          title: 'Push Notifications',
-                          subtitle: 'Receive notifications on your device',
-                          trailing: _buildSwitch(
-                            value: _pushNotificationsEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _pushNotificationsEnabled = value;
-                              });
-                              _saveNotificationSetting('push_notifications_enabled', value);
-                            },
-                          ),
-                        ),
-                        _NotificationItem(
-                          icon: Icons.email_outlined,
-                          title: 'Email Notifications',
-                          subtitle: 'Receive notifications via email',
-                          trailing: _buildSwitch(
-                            value: _emailNotificationsEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _emailNotificationsEnabled = value;
-                              });
-                              _saveNotificationSetting('email_notifications_enabled', value);
-                            },
-                          ),
-                        ),
-                      ],
+                      enabled: _pushNotificationsEnabled || _emailNotificationsEnabled,
                     ),
-                    const SizedBox(height: 32),
-                    
-                    // Form Notifications Section
-                    _NotificationSection(
-                      title: 'Form Notifications',
-                      items: [
-                        _NotificationItem(
-                          icon: Icons.alarm_outlined,
-                          title: 'Form Reminders',
-                          subtitle: 'Get reminded about incomplete forms',
-                          trailing: _buildSwitch(
-                            value: _formRemindersEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _formRemindersEnabled = value;
-                              });
-                              _saveNotificationSetting('form_reminders_enabled', value);
-                            },
-                          ),
-                          enabled: _pushNotificationsEnabled || _emailNotificationsEnabled,
-                        ),
-                        _NotificationItem(
-                          icon: Icons.check_circle_outline,
-                          title: 'Submission Confirmations',
-                          subtitle: 'Get notified when forms are submitted',
-                          trailing: _buildSwitch(
-                            value: _submissionConfirmationsEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _submissionConfirmationsEnabled = value;
-                              });
-                              _saveNotificationSetting('submission_confirmations_enabled', value);
-                            },
-                          ),
-                          enabled: _pushNotificationsEnabled || _emailNotificationsEnabled,
-                        ),
-                      ],
+                    _NotificationItem(
+                      icon: Icons.check_circle_outline,
+                      title: 'Submission Confirmations',
+                      subtitle: 'Get notified when forms are submitted',
+                      trailing: _buildSwitch(
+                        value: _submissionConfirmationsEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _submissionConfirmationsEnabled = value;
+                          });
+                          _saveNotificationSetting('submission_confirmations_enabled', value);
+                        },
+                      ),
+                      enabled: _pushNotificationsEnabled || _emailNotificationsEnabled,
                     ),
-                    const SizedBox(height: 32),
-                    
-                    // Summary & Reports Section
-                    _NotificationSection(
-                      title: 'Summary & Reports',
-                      items: [
-                        _NotificationItem(
-                          icon: Icons.summarize_outlined,
-                          title: 'Weekly Summary',
-                          subtitle: 'Receive a weekly summary of your activity',
-                          trailing: _buildSwitch(
-                            value: _weeklySummaryEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _weeklySummaryEnabled = value;
-                              });
-                              _saveNotificationSetting('weekly_summary_enabled', value);
-                            },
-                          ),
-                          enabled: _emailNotificationsEnabled,
-                        ),
-                      ],
+                  ],
+                ),
+                const SizedBox(height: 32),
+                
+                // Summary & Reports Section
+                _NotificationSection(
+                  title: 'Summary & Reports',
+                  items: [
+                    _NotificationItem(
+                      icon: Icons.summarize_outlined,
+                      title: 'Weekly Summary',
+                      subtitle: 'Receive a weekly summary of your activity',
+                      trailing: _buildSwitch(
+                        value: _weeklySummaryEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _weeklySummaryEnabled = value;
+                          });
+                          _saveNotificationSetting('weekly_summary_enabled', value);
+                        },
+                      ),
+                      enabled: _emailNotificationsEnabled,
                     ),
-                    const SizedBox(height: 32),
-                    
-                    // Promotional Section
-                    _NotificationSection(
-                      title: 'Promotional',
-                      items: [
-                        _NotificationItem(
-                          icon: Icons.local_offer_outlined,
-                          title: 'Promotional Notifications',
-                          subtitle: 'Receive updates about new features and offers',
-                          trailing: _buildSwitch(
-                            value: _promotionalNotificationsEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _promotionalNotificationsEnabled = value;
-                              });
-                              _saveNotificationSetting('promotional_notifications_enabled', value);
-                            },
-                          ),
-                          enabled: _pushNotificationsEnabled || _emailNotificationsEnabled,
-                        ),
-                      ],
+                  ],
+                ),
+                const SizedBox(height: 32),
+                
+                // Promotional Section
+                _NotificationSection(
+                  title: 'Promotional',
+                  items: [
+                    _NotificationItem(
+                      icon: Icons.local_offer_outlined,
+                      title: 'Promotional Notifications',
+                      subtitle: 'Receive updates about new features and offers',
+                      trailing: _buildSwitch(
+                        value: _promotionalNotificationsEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _promotionalNotificationsEnabled = value;
+                          });
+                          _saveNotificationSetting('promotional_notifications_enabled', value);
+                        },
+                      ),
+                      enabled: _pushNotificationsEnabled || _emailNotificationsEnabled,
                     ),
-                    const SizedBox(height: 32),
-                    
-                    // Notification Preferences Section
-                    _NotificationSection(
-                      title: 'Notification Preferences',
-                      items: [
-                        _NotificationItem(
-                          icon: Icons.volume_up_outlined,
-                          title: 'Sound',
-                          subtitle: 'Play sound for notifications',
-                          trailing: _buildSwitch(
-                            value: _soundEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _soundEnabled = value;
-                              });
-                              _saveNotificationSetting('notification_sound_enabled', value);
-                            },
-                          ),
-                          enabled: _pushNotificationsEnabled,
-                        ),
-                        _NotificationItem(
-                          icon: Icons.vibration,
-                          title: 'Vibration',
-                          subtitle: 'Vibrate for notifications',
-                          trailing: _buildSwitch(
-                            value: _vibrationEnabled,
-                            onChanged: (value) {
-                              setState(() {
-                                _vibrationEnabled = value;
-                              });
-                              _saveNotificationSetting('notification_vibration_enabled', value);
-                            },
-                          ),
-                          enabled: _pushNotificationsEnabled,
-                        ),
-                      ],
+                  ],
+                ),
+                const SizedBox(height: 32),
+                
+                // Notification Preferences Section
+                _NotificationSection(
+                  title: 'Notification Preferences',
+                  items: [
+                    _NotificationItem(
+                      icon: Icons.volume_up_outlined,
+                      title: 'Sound',
+                      subtitle: 'Play sound for notifications',
+                      trailing: _buildSwitch(
+                        value: _soundEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _soundEnabled = value;
+                          });
+                          _saveNotificationSetting('notification_sound_enabled', value);
+                        },
+                      ),
+                      enabled: _pushNotificationsEnabled,
                     ),
-                    const SizedBox(height: 32),
-                    
-                    // Notification History
-                    _NotificationSection(
-                      title: 'History',
-                      items: [
-                        _NotificationItem(
-                          icon: Icons.history_outlined,
-                          title: 'View Notification History',
-                          subtitle: 'See all your past notifications',
-                          onTap: () {
-                            showDialog(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Notification History'),
-                                content: SizedBox(
-                                  width: double.maxFinite,
-                                  child: ListView(
-                                    shrinkWrap: true,
-                                    children: [
-                                      _NotificationHistoryItem(
-                                        title: 'Form Submitted',
-                                        message: 'Your Passport Renewal form was submitted successfully',
-                                        time: '2 hours ago',
-                                      ),
-                                      _NotificationHistoryItem(
-                                        title: 'Form Reminder',
-                                        message: 'You have 2 incomplete forms',
-                                        time: '1 day ago',
-                                      ),
-                                      _NotificationHistoryItem(
-                                        title: 'Weekly Summary',
-                                        message: 'You completed 5 forms this week',
-                                        time: '3 days ago',
-                                      ),
-                                    ],
+                    _NotificationItem(
+                      icon: Icons.vibration,
+                      title: 'Vibration',
+                      subtitle: 'Vibrate for notifications',
+                      trailing: _buildSwitch(
+                        value: _vibrationEnabled,
+                        onChanged: (value) {
+                          setState(() {
+                            _vibrationEnabled = value;
+                          });
+                          _saveNotificationSetting('notification_vibration_enabled', value);
+                        },
+                      ),
+                      enabled: _pushNotificationsEnabled,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
+                
+                // Notification History
+                _NotificationSection(
+                  title: 'History',
+                  items: [
+                    _NotificationItem(
+                      icon: Icons.history_outlined,
+                      title: 'View Notification History',
+                      subtitle: 'See all your past notifications',
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Notification History'),
+                            content: SizedBox(
+                              width: double.maxFinite,
+                              child: ListView(
+                                shrinkWrap: true,
+                                children: [
+                                  _NotificationHistoryItem(
+                                    title: 'Form Submitted',
+                                    message: 'Your Passport Renewal form was submitted successfully',
+                                    time: '2 hours ago',
                                   ),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.of(context).pop(),
-                                    child: const Text('Close'),
+                                  _NotificationHistoryItem(
+                                    title: 'Form Reminder',
+                                    message: 'You have 2 incomplete forms',
+                                    time: '1 day ago',
+                                  ),
+                                  _NotificationHistoryItem(
+                                    title: 'Weekly Summary',
+                                    message: 'You completed 5 forms this week',
+                                    time: '3 days ago',
                                   ),
                                 ],
                               ),
-                            );
-                          },
-                        ),
-                      ],
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                    const SizedBox(height: 20),
                   ],
-                ],
-              ),
-            ),
-            // Bottom Navigation
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: BottomNavigation(currentRoute: '/settings'),
-            ),
-          ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ],
+          ),
         ),
       ),
     );

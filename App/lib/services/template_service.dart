@@ -504,6 +504,17 @@ class TemplateService {
     return categories.toList();
   }
 
+  Future<List<Map<String, dynamic>>> getPopularTemplates({int limit = 4}) async {
+    final allTemplates = await getAllTemplates();
+    final sortedTemplates = List<Map<String, dynamic>>.from(allTemplates);
+    sortedTemplates.sort((a, b) {
+      final usageA = a['usageCount'] ?? 0;
+      final usageB = b['usageCount'] ?? 0;
+      return usageB.compareTo(usageA);
+    });
+    return sortedTemplates.take(limit).toList();
+  }
+
   Future<List<Map<String, dynamic>>> searchTemplates(String query) async {
     final allTemplates = await getAllTemplates();
     if (query.isEmpty) return allTemplates;

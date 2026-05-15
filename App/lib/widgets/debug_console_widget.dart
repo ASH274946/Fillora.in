@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/debug_log_service.dart';
+import 'app_snackbar.dart';
 
 class DebugConsoleWidget extends StatefulWidget {
   const DebugConsoleWidget({super.key});
@@ -307,12 +308,7 @@ class _DebugConsoleWidgetState extends State<DebugConsoleWidget> {
                             .map((log) => '[${log.formattedDateTime}] [${log.type.name.toUpperCase()}] ${log.message}')
                             .join('\n');
                         Clipboard.setData(ClipboardData(text: allLogs));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Logs copied to clipboard'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
+                        AppSnackBar.show(context, 'Logs copied to clipboard');
                       },
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),

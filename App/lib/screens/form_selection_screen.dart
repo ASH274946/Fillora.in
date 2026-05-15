@@ -8,6 +8,7 @@ import 'google_form_webview_screen.dart';
 import '../services/app_logger_service.dart';
 import '../services/database_service.dart';
 import 'google_account_selection_dialog.dart';
+import '../widgets/app_snackbar.dart';
 
 class FormSelectionScreen extends StatefulWidget {
   const FormSelectionScreen({super.key});
@@ -200,13 +201,7 @@ class _FormSelectionScreenState extends State<FormSelectionScreen> {
                 DebugLogService().info('Please review the logs above. Close this dialog when done.');
                 // Don't auto-close on error - let user review logs and close manually
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Failed to analyze form. Check the debug console for details.'),
-                      backgroundColor: Colors.red,
-                      duration: Duration(seconds: 5),
-                    ),
-                  );
+                  AppSnackBar.show(context, 'Failed to analyze form. Check the debug console for details.', isError: true);
                 }
                 // Dialog stays open - user can close manually using the Close button
               }
@@ -311,13 +306,7 @@ class _FormSelectionScreenState extends State<FormSelectionScreen> {
                   } else {
                     DebugLogService().error('✗ Failed to create form');
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Failed to analyze form. Please try again.'),
-                          backgroundColor: Colors.red,
-                          duration: Duration(seconds: 5),
-                        ),
-                      );
+                      AppSnackBar.show(context, 'Failed to analyze form. Please try again.', isError: true);
                     }
                   }
                 } catch (retryError) {
@@ -325,13 +314,7 @@ class _FormSelectionScreenState extends State<FormSelectionScreen> {
                   Navigator.of(context).pop();
                   DebugLogService().error('✗ Error: ${retryError.toString()}');
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error: ${retryError.toString()}'),
-                        backgroundColor: Colors.red,
-                        duration: const Duration(seconds: 5),
-                      ),
-                    );
+                    AppSnackBar.show(context, 'Error: ${retryError.toString()}', isError: true);
                   }
                 } finally {
                   if (mounted) setState(() => _isAnalyzing = false);
@@ -343,13 +326,7 @@ class _FormSelectionScreenState extends State<FormSelectionScreen> {
                 DebugLogService().error('✗ Error: ${e.toString()}');
                 DebugLogService().info('Please review the logs above. Close this dialog when done.');
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error occurred. Check the debug console for details.'),
-                      backgroundColor: Colors.red,
-                      duration: const Duration(seconds: 5),
-                    ),
-                  );
+                  AppSnackBar.show(context, 'Error occurred. Check the debug console for details.', isError: true);
                 }
               }
             } finally {
@@ -433,9 +410,7 @@ class _UrlDialogContentState extends State<_UrlDialogContent> {
                 // Get the URL before popping the dialog
                 final url = _urlController.text.trim();
                 if (url.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please enter a URL')),
-                  );
+                  AppSnackBar.show(context, 'Please enter a URL', isError: true);
                   return;
                 }
 

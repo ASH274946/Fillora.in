@@ -10,12 +10,10 @@ import '../services/voice_service.dart';
 import '../services/database_service.dart';
 import '../services/profile_autofill_service.dart';
 import '../models/form_model.dart';
-import '../widgets/debug_console_widget.dart';
-import '../services/debug_log_service.dart';
-import '../services/debug_console_service.dart';
 import '../services/app_logger_service.dart';
 import '../services/azure_translation_service.dart'; // Added: Azure Translation Service
 import '../services/language_service.dart'; // Added: Language Service for codes
+import '../widgets/app_snackbar.dart';
 
 
 class ConversationalFormScreen extends StatefulWidget {
@@ -48,6 +46,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
   bool _isChatOpen = false; // Track if chat interface is open
   final ScrollController _chatScrollController = ScrollController(); // Controller for chat messages
   bool _isSubmitting = false; // Track if form is being submitted
+  final ProfileAutofillService _autofillService = ProfileAutofillService();
   
   // Multi-Language Support
   final AzureTranslationService _translationService = AzureTranslationService();
@@ -624,18 +623,14 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
         _isTranslatingForm = false;
       });
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Form language changed to ${newLang.toUpperCase()}')),
-      );
+      AppSnackBar.show(context, 'Form language changed to ${newLang.toUpperCase()}');
       
     } catch (e) {
       debugPrint('Form Translation Failed: $e');
       setState(() {
         _isTranslatingForm = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to translate form. Please try again.')),
-      );
+      AppSnackBar.show(context, 'Failed to translate form. Please try again.', isError: true);
     }
   }
 
@@ -828,13 +823,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
               .trim();
         }).join(', ');
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Please fill in all required fields: $fieldNames'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        AppSnackBar.show(context, 'Please fill in all required fields: $fieldNames', isError: true);
         
         // Scroll to first empty required field
         if (emptyRequiredFields.isNotEmpty) {
@@ -890,13 +879,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
         formTitle: _form!.title);
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Form submitted successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        AppSnackBar.show(context, 'Form submitted successfully!');
         
         // Navigate back after a short delay
         Future.delayed(const Duration(seconds: 1), () {
@@ -911,12 +894,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
         _isSubmitting = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting form: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackBar.show(context, 'Error submitting form: $e', isError: true);
       }
     }
   }
@@ -1066,12 +1044,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
     } catch (e) {
       debugPrint('❌ ERROR: Future Form Assistant Error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackBar.show(context, 'Error: ${e.toString()}', isError: true);
       }
     }
     
@@ -1157,13 +1130,66 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
       },
       onError: (error) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Voice recognition error: $error')),
-          );
+          AppSnackBar.show(context, 'Voice recognition error: $error', isError: true);
           setState(() => _isListening = false);
         }
       },
     );
+  }
+
+  Future<void> _performMagicFill() async {
+    if (_form == null) return;
+    
+    setState(() {
+      _isSubmitting = true; // Show loading state
+    });
+    
+    try {
+      final autofilledData = await _autofillService.autofillFormData(
+        _form!.formData ?? {},
+        _fieldMetadata,
+      );
+      
+      int filledCount = 0;
+      for (var entry in autofilledData.entries) {
+        final key = entry.key;
+        final newValue = entry.value;
+        final oldValue = _form!.formData?[key];
+        
+        if ((oldValue == null || oldValue == '' || (oldValue is List && oldValue.isEmpty)) &&
+            newValue != null && newValue != '' && !(newValue is List && newValue.isEmpty)) {
+          
+          final controller = _getFieldController(key);
+          final fieldMeta = _fieldMetadata[key] as Map<String, dynamic>?;
+          final fieldType = fieldMeta?['type'] as String? ?? 'text';
+          
+          if (fieldType != 'checkbox') {
+            controller.text = newValue.toString();
+          }
+          _form!.formData![key] = newValue;
+          filledCount++;
+        }
+      }
+      
+      await _saveFormData();
+      
+      if (mounted) {
+        final currentTheme = Theme.of(context);
+        AppSnackBar.show(context, filledCount > 0 
+          ? 'Magic Fill complete! $filledCount fields populated.' 
+          : 'No new fields to fill from your profile.');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppSnackBar.show(context, 'Magic Fill error: $e', isError: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
   }
 
   Future<bool> _onWillPop() async {
@@ -1179,7 +1205,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
       for (var entry in _fieldControllers.entries) {
         final fieldKey = entry.key;
         final currentValue = entry.value.text.trim();
-        final savedValue = _form!.formData[fieldKey]?.toString().trim() ?? '';
+        final savedValue = _form!.formData?[fieldKey]?.toString().trim() ?? '';
         if (currentValue != savedValue) {
           hasUnsavedChanges = true;
           break;
@@ -1228,11 +1254,19 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
         } else {
           context.go('/dashboard');
         }
+        return true;
       }
-      return false; // Prevent default back action
+      return false; 
     }
     
     // No unsaved changes, allow navigation
+    if (mounted) {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/dashboard');
+      }
+    }
     return true;
   }
 
@@ -1331,14 +1365,14 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                         onPressed: () async {
                           await _saveFormData();
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Form saved successfully!'),
-                                duration: Duration(seconds: 2),
-                              ),
-                            );
+                            AppSnackBar.show(context, 'Form saved successfully!');
                           }
                         },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.auto_awesome, color: Colors.amber),
+                        tooltip: 'Magic Fill',
+                        onPressed: _performMagicFill,
                       ),
                       IconButton(
                         icon: const Icon(Icons.help_outline),
@@ -1553,13 +1587,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                                           .join(', ');
                                       
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Please fill in all required fields: $fieldNames'),
-                                            backgroundColor: Colors.red,
-                                            duration: const Duration(seconds: 3),
-                                          ),
-                                        );
+                                        AppSnackBar.show(context, 'Please fill in all required fields: $fieldNames', isError: true);
                                         
                                         // Scroll to first empty required field
                                         final firstEmptyField = emptyRequiredFields.first;
@@ -1742,9 +1770,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                             
                             // Better experience: Send a hidden "Hi" to get a localized greeting? 
                             // Or just show a Snackbar "Language changed to..."
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Conversation language set to ${newValue.toUpperCase()}')),
-                            );
+                            AppSnackBar.show(context, 'Conversation language set to ${newValue.toUpperCase()}');
                           }
                         },
                       ),
@@ -1854,12 +1880,24 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                           horizontal: 16,
                           vertical: 12,
                         ),
-                        suffixIcon: _isListening && _activeController == _messageController
-                            ? Padding(
-                                padding: const EdgeInsets.all(12.0),
+                        suffixIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_isListening && _activeController == _messageController)
+                              const Padding(
+                                padding: EdgeInsets.all(12.0),
                                 child: Icon(Icons.mic, color: Colors.red, size: 20),
-                              )
-                            : null,
+                              ),
+                            IconButton(
+                              icon: Icon(_isListening ? Icons.mic : Icons.mic_none, size: 20),
+                              onPressed: _startListening,
+                              color: _isListening ? Colors.red : theme.colorScheme.primary,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                        ),
                       ),
                       onSubmitted: (_) => _sendMessage(),
                       textInputAction: TextInputAction.send,
@@ -1868,31 +1906,6 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                           _activeController = _messageController;
                         });
                       },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: _startListening,
-                    icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
-                    style: ButtonStyle(
-                      backgroundColor: MaterialStateProperty.resolveWith<Color>(
-                        (Set<MaterialState> states) {
-                          if (states.contains(MaterialState.disabled)) {
-                            return theme.colorScheme.surface.withOpacity(0.3);
-                          }
-                          // Red when listening, otherwise use lighter grey for dark theme
-                          if (_isListening) {
-                            return Colors.red;
-                          }
-                          // Use lighter grey for dark theme, primary color for other themes
-                          return theme.brightness == Brightness.dark
-                              ? const Color(0xFF333333) // Grey (20% white, 80% black) as requested
-                              : theme.colorScheme.primary;
-                        },
-                      ),
-                      foregroundColor: MaterialStateProperty.all(
-                        Colors.white,
-                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -2593,9 +2606,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
               }
             } catch (e) {
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error picking file: $e')),
-                );
+                AppSnackBar.show(context, 'Error picking file: $e', isError: true);
               }
             }
           },
@@ -2894,12 +2905,7 @@ class _ChatBubble extends StatelessWidget {
     // Validate URL format
     if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Invalid URL format: $cleanUrl'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackBar.show(context, 'Invalid URL format: $cleanUrl', isError: true);
       }
       return;
     }
@@ -2933,13 +2939,7 @@ class _ChatBubble extends StatelessWidget {
         } catch (e2) {
           debugPrint('All launch modes failed: $e2');
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Could not open $cleanUrl. Please make sure you have a browser installed.'),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 4),
-              ),
-            );
+            AppSnackBar.show(context, 'Could not open $cleanUrl', isError: true);
           }
           return;
         }
@@ -2947,13 +2947,7 @@ class _ChatBubble extends StatelessWidget {
     } catch (e) {
       debugPrint('Error parsing or launching URL: $e');
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error opening URL: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        AppSnackBar.show(context, 'Error opening URL: ${e.toString()}', isError: true);
       }
     }
   }

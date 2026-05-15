@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../services/app_logger_service.dart';
+import '../widgets/app_snackbar.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -15,8 +16,8 @@ class _SignInScreenState extends State<SignInScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
-  bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -50,18 +51,14 @@ class _SignInScreenState extends State<SignInScreen> {
                   'Welcome Back',
                   style: theme.textTheme.displaySmall,
                   textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Sign in to continue to Fillora',
                   style: theme.textTheme.bodyMedium,
                   textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 2,
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 48),
                 // Email Field
                 TextFormField(
                   controller: _emailController,
@@ -80,7 +77,7 @@ class _SignInScreenState extends State<SignInScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 // Password Field
                 TextFormField(
                   controller: _passwordController,
@@ -112,42 +109,53 @@ class _SignInScreenState extends State<SignInScreen> {
                   },
                 ),
                 const SizedBox(height: 8),
+                // Forgot Password
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () {
                       showDialog(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Reset Password'),
-                          content: const Text(
-                            'A password reset link will be sent to your email address.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text('Cancel'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.of(context).pop();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Password reset email sent!'),
+                        builder: (context) {
+                          final emailController = TextEditingController(text: _emailController.text);
+                          return AlertDialog(
+                            title: const Text('Reset Password'),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('Enter your email to receive a password reset link.'),
+                                const SizedBox(height: 16),
+                                TextField(
+                                  controller: emailController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Email',
+                                    prefixIcon: Icon(Icons.email_outlined),
                                   ),
-                                );
-                              },
-                              child: const Text('Send'),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('Cancel'),
+                              ),
+                              ElevatedButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                  AppSnackBar.show(context, 'Password reset email sent!');
+                                },
+                                child: const Text('Send'),
+                              ),
+                            ],
+                          );
+                        },
                       );
                     },
                     child: const Text('Forgot Password?'),
                   ),
                 ),
-                const SizedBox(height: 24),
-                // Sign In Button
+                const SizedBox(height: 32),
+                // Login Button
                 FilledButton(
                   onPressed: _isLoading ? null : () async {
                     if (_formKey.currentState!.validate()) {
@@ -163,34 +171,19 @@ class _SignInScreenState extends State<SignInScreen> {
                         
                         if (result['success'] == true) {
                           AppLoggerService().logAuth('Email sign-in successful', provider: 'email', success: true);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Signed in successfully!'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
+                          AppSnackBar.show(context, 'Signed in successfully!');
                           await Future.delayed(const Duration(milliseconds: 500));
                           if (mounted) {
                             context.go('/dashboard');
                           }
                         } else {
                           AppLoggerService().logAuth('Email sign-in failed', provider: 'email', success: false);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Error: ${result['error'] ?? 'Sign in failed'}'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
+                          AppSnackBar.show(context, 'Error: ${result['error'] ?? 'Sign in failed'}', isError: true);
                         }
                       } catch (e) {
                         AppLoggerService().logError('Email sign-in', e);
                         if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Error: ${e.toString()}'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
+                        AppSnackBar.show(context, 'Error: ${e.toString()}', isError: true);
                       } finally {
                         if (mounted) {
                           setState(() => _isLoading = false);
@@ -215,7 +208,7 @@ class _SignInScreenState extends State<SignInScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
-                      : Text(
+                      : const Text(
                           'Sign In',
                           style: TextStyle(
                             fontSize: 16,
@@ -298,34 +291,18 @@ class _SignInScreenState extends State<SignInScreen> {
 
       if (result != null && result['success'] == true) {
         AppLoggerService().logAuth('Google sign-in successful', provider: 'google', success: true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Signed in with Google successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        AppSnackBar.show(context, 'Signed in with Google successfully!');
         context.go('/dashboard');
       } else if (result != null) {
         AppLoggerService().logAuth('Google sign-in failed', provider: 'google', success: false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${result['error'] ?? 'Sign in failed'}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackBar.show(context, 'Error: ${result['error'] ?? 'Sign in failed'}', isError: true);
       } else {
         AppLoggerService().logAuth('Google sign-in cancelled', provider: 'google');
       }
-      // If result is null, user cancelled - no need to show error
     } catch (e) {
       AppLoggerService().logError('Google sign-in', e);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      AppSnackBar.show(context, 'Error: ${e.toString()}', isError: true);
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -342,34 +319,18 @@ class _SignInScreenState extends State<SignInScreen> {
 
       if (result != null && result['success'] == true) {
         AppLoggerService().logAuth('Facebook sign-in successful', provider: 'facebook', success: true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Signed in with Facebook successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        AppSnackBar.show(context, 'Signed in with Facebook successfully!');
         context.go('/dashboard');
       } else if (result != null) {
         AppLoggerService().logAuth('Facebook sign-in failed', provider: 'facebook', success: false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${result['error'] ?? 'Sign in failed'}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        AppSnackBar.show(context, 'Error: ${result['error'] ?? 'Sign in failed'}', isError: true);
       } else {
         AppLoggerService().logAuth('Facebook sign-in cancelled', provider: 'facebook');
       }
-      // If result is null, user cancelled - no need to show error
     } catch (e) {
       AppLoggerService().logError('Facebook sign-in', e);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      AppSnackBar.show(context, 'Error: ${e.toString()}', isError: true);
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -382,26 +343,22 @@ class _SocialButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
 
-  const _SocialButton({
-    required this.icon,
-    this.onTap,
-  });
+  const _SocialButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        border: Border.all(color: theme.dividerColor),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: IconButton(
-        icon: Icon(icon),
-        onPressed: onTap,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, size: 32),
       ),
     );
   }
 }
-

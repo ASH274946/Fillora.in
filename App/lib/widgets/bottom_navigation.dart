@@ -1,103 +1,129 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../services/app_logger_service.dart';
 
 class BottomNavigation extends StatelessWidget {
-  final String currentRoute;
+  final String? currentRoute;
+  final StatefulNavigationShell? navigationShell;
 
   const BottomNavigation({
     super.key,
-    required this.currentRoute,
+    this.currentRoute,
+    this.navigationShell,
   });
+
+  void _onTap(BuildContext context, int index) {
+    if (navigationShell != null) {
+      navigationShell!.goBranch(
+        index,
+        initialLocation: index == navigationShell!.currentIndex,
+      );
+    } else {
+      // Fallback for non-shell navigation
+      switch (index) {
+        case 0:
+          context.go('/dashboard');
+          break;
+        case 1:
+          context.go('/templates');
+          break;
+        case 2:
+          context.go('/history');
+          break;
+        case 3:
+          context.go('/settings');
+          break;
+      }
+    }
+  }
+
+  int _getCurrentIndex() {
+    if (navigationShell != null) {
+      return navigationShell!.currentIndex;
+    }
+    
+    if (currentRoute == '/dashboard') return 0;
+    if (currentRoute == '/templates') return 1;
+    if (currentRoute == '/history') return 2;
+    if (currentRoute == '/settings' || (currentRoute?.startsWith('/settings') ?? false)) return 3;
+    
+    return 0;
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final currentIndex = _getCurrentIndex();
 
-    return SafeArea(
-      top: false,
-      child: Container(
-        margin: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          bottom: bottomPadding > 0 ? bottomPadding + 12 : 12, // Add safe area padding
-          top: 12,
-        ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: theme.dividerColor,
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        bottom: bottomPadding > 0 ? bottomPadding + 8 : 20,
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          // Main Navigation Pill
           Expanded(
-            child: _NavItem(
-              icon: Icons.home_rounded,
-              label: 'Home',
-              isActive: currentRoute == '/dashboard',
-              onTap: () {
-                AppLoggerService().logUserInteraction('Bottom navigation', details: 'Home');
-                context.go('/dashboard');
-              },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(40),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  height: 70,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(40),
+                    border: Border.all(
+                      color: theme.colorScheme.onSurface.withOpacity(0.1),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _NavItem(
+                        icon: Icons.home_rounded,
+                        label: 'Home',
+                        isActive: currentIndex == 0,
+                        onTap: () => _onTap(context, 0),
+                      ),
+                      _NavItem(
+                        icon: Icons.description_rounded,
+                        label: 'Templates',
+                        isActive: currentIndex == 1,
+                        onTap: () => _onTap(context, 1),
+                      ),
+                      _NavItem(
+                        icon: Icons.history_rounded,
+                        label: 'History',
+                        isActive: currentIndex == 2,
+                        onTap: () => _onTap(context, 2),
+                      ),
+                      _NavItem(
+                        icon: Icons.settings_rounded,
+                        label: 'Settings',
+                        isActive: currentIndex == 3,
+                        onTap: () => _onTap(context, 3),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-          Expanded(
-            child: _NavItem(
-              icon: Icons.description_rounded,
-              label: 'Templates',
-              isActive: currentRoute == '/templates',
-              onTap: () {
-                AppLoggerService().logUserInteraction('Bottom navigation', details: 'Templates');
-                context.go('/templates');
-              },
-            ),
-          ),
-          Expanded(
-            child: _NavItem(
-              icon: Icons.history_rounded,
-              label: 'History',
-              isActive: currentRoute == '/history',
-              onTap: () {
-                AppLoggerService().logUserInteraction('Bottom navigation', details: 'History');
-                context.go('/history');
-              },
-            ),
-          ),
-          Expanded(
-            child: _NavItem(
-              icon: Icons.settings_rounded,
-              label: 'Settings',
-              isActive: currentRoute == '/settings',
-              onTap: () {
-                AppLoggerService().logUserInteraction('Bottom navigation', details: 'Settings');
-                context.go('/settings');
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          _FAB(
+          const SizedBox(width: 12),
+          // Start New Form Button (Square on the right)
+          _NewFormButton(
             onTap: () {
               AppLoggerService().logUserInteraction('FAB', details: 'New form');
               context.push('/form-selection');
             },
-            primaryColor: theme.colorScheme.primary,
-            brightness: theme.brightness,
           ),
         ],
-      ),
       ),
     );
   }
@@ -119,88 +145,105 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
+    
+    if (isActive) {
+      // Pill style for active item
+      return GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 48,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: theme.brightness == Brightness.dark 
+                ? Colors.black 
+                : theme.colorScheme.primary,
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: Colors.white,
+                size: 22,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
+    // Icon only style for inactive items
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: isActive
-              ? Border.all(
-                  color: primaryColor,
-                  width: 2,
-                )
-              : null,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              color: isActive ? primaryColor : theme.colorScheme.onSurface.withOpacity(0.6),
-              size: 22,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isActive ? primaryColor : theme.colorScheme.onSurface.withOpacity(0.6),
-                fontSize: 11,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-              ),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-          ],
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Icon(
+          icon,
+          color: theme.colorScheme.onSurface.withOpacity(0.7),
+          size: 22,
         ),
       ),
     );
   }
 }
 
-class _FAB extends StatelessWidget {
+class _NewFormButton extends StatelessWidget {
   final VoidCallback onTap;
-  final Color primaryColor;
-  final Brightness brightness;
 
-  const _FAB({
-    required this.onTap,
-    required this.primaryColor,
-    required this.brightness,
-  });
+  const _NewFormButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    // Use grey (20% white, 80% black) for dark theme, primary color for other themes
-    final buttonColor = brightness == Brightness.dark
-        ? const Color(0xFF333333) // Grey (20% white, 80% black) as requested
-        : primaryColor;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: buttonColor,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: buttonColor.withOpacity(0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
+    final theme = Theme.of(context);
+    
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 70,
+            height: 70,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface.withOpacity(0.7),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: theme.colorScheme.onSurface.withOpacity(0.1),
+                width: 1,
+              ),
             ),
-          ],
-        ),
-        child: const Icon(
-          Icons.add,
-          color: Colors.white,
-          size: 24,
+            child: Icon(
+              Icons.add_rounded,
+              color: theme.colorScheme.onSurface,
+              size: 28,
+            ),
+          ),
         ),
       ),
     );
   }
 }
-
