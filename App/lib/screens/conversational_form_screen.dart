@@ -390,10 +390,9 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
       for (var fieldName in _fieldMetadata.keys) {
         final fieldMeta = _fieldMetadata[fieldName] as Map<String, dynamic>?;
         final fieldType = fieldMeta?['type'] as String? ?? 'text';
-        // Exclude static fields from page organization (they're displayed separately)
-        if (fieldType != 'static') {
-          fieldList.add(fieldName);
-        }
+        // Include all fields in page organization, including static fields
+        // this allows them to be rendered in the form flow as requested
+        fieldList.add(fieldName);
       }
     } else if (_form?.formData != null) {
       // Fallback: if no metadata, use formData keys
@@ -1550,63 +1549,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Display form description/instructions if available
-                        if (_form?.description != null && _form!.description!.isNotEmpty)
-                          Builder(
-                            builder: (context) {
-                              // Extract description (excluding metadata)
-                              String description = _form!.description!;
-                              // Remove metadata if present
-                              if (description.contains('__METADATA__:')) {
-                                description = description.substring(0, description.indexOf('__METADATA__:')).trim();
-                              }
-                              // Only show if there's actual description text (not just metadata)
-                              if (description.isEmpty) {
-                                return const SizedBox.shrink();
-                              }
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 24),
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: theme.dividerColor.withOpacity(0.5),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.info_outline,
-                                          size: 20,
-                                          color: theme.colorScheme.primary,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Form Instructions',
-                                          style: theme.textTheme.titleSmall?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: theme.colorScheme.primary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      description,
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        height: 1.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
+                        // Top-level instructions block removed as they are now rendered as fields
                         // Render fields for current page only
                         if (_getCurrentPageFields().isNotEmpty)
                           ...(_getCurrentPageFields().map((fieldKey) {
@@ -2122,14 +2065,6 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
               ),
             ],
           ),
-          if (description != null && fieldType == 'static')
-            Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Text(
-                description,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
           const SizedBox(height: 8),
           // Field Widget based on type
           _buildFieldWidget(fieldKey, fieldType, fieldMeta, theme),
@@ -2199,7 +2134,40 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
   ) {
     switch (fieldType) {
       case 'static':
-        return const SizedBox.shrink(); // Static content is already shown above
+        final description = fieldMeta?['description'] as String? ?? '';
+        if (description.isEmpty) return const SizedBox.shrink();
+        
+        return Container(
+          margin: const EdgeInsets.only(top: 8, bottom: 8),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: theme.dividerColor.withOpacity(0.5),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 20,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  description,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
       
       case 'radio':
         final options = (fieldMeta?['options'] as List<dynamic>?) ?? [];

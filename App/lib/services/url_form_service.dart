@@ -195,15 +195,11 @@ class UrlFormService {
         fieldMetadata,
       );
 
-      // Format title as "Web Form • [Actual Form Name]" if form name exists
+      // Use the actual form name as the title
       String formTitle = formStructure['title'] as String? ?? 'Web Form';
-      // Clean up generic titles - but keep "Google Form" as it's more descriptive
-      if (formTitle == 'Untitled Form' || formTitle.toLowerCase() == 'untitled form') {
+      // Clean up generic titles
+      if (formTitle == 'Untitled Form' || formTitle.toLowerCase() == 'untitled form' || formTitle.isEmpty) {
         formTitle = 'Web Form';
-      }
-      // Format with "Web Form •" prefix if we have an actual form name (including "Google Form")
-      if (formTitle != 'Web Form' && formTitle.isNotEmpty && formTitle.trim().isNotEmpty) {
-        formTitle = 'Web Form • $formTitle';
       }
 
       final form = FormModel(
@@ -1667,205 +1663,256 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
         final formInfo = formData[1] as List;
         print('FormInfo length: ${formInfo.length}');
         
-        // Try index 1 first (most common location) - but ONLY if it's a String
-        if (formInfo.length > 1 && formInfo[1] != null && formInfo[1] is String) {
-          final extractedFormTitle = (formInfo[1] as String).trim();
-          print('Extracted title from formInfo[1]: "$extractedFormTitle"');
-          if (extractedFormTitle.isNotEmpty && 
-              extractedFormTitle != 'null' && 
-              extractedFormTitle.length > 2 &&
-              extractedFormTitle.length < 300 && 
-              extractedFormTitle.toLowerCase() != 'untitled form' &&
-              !extractedFormTitle.startsWith('http') &&
-              !extractedFormTitle.startsWith('[')) { 
-            formTitle = extractedFormTitle;
-            // Clean up common suffixes
-            formTitle = formTitle.replaceAll(RegExp(r'\s*-\s*Google Forms.*$', caseSensitive: false), '');
-            formTitle = formTitle.replaceAll(RegExp(r'\s*-\s*Google.*$', caseSensitive: false), '');
-            formTitle = formTitle.trim();
-            print('Cleaned title: "$formTitle"');
-          }
-        }
+        // Strategy 1: Targeted Index Extraction (Highly Reliable for Google Forms)
+        String? primaryTitle;
+        List<String> instructionBlocks = [];
         
-        // If still generic, try other indices - but ONLY if they're strings
-        final hasValidTitle = formTitle != 'Google Form' && 
-                             formTitle.isNotEmpty && 
-                             (fallbackTitle == null || formTitle != fallbackTitle);
-        if (!hasValidTitle && fallbackTitle == null) {
-          print('Title still generic, searching other indices...');
-          for (int i = 0; i < formInfo.length && i < 10; i++) {
-            if (formInfo[i] is String) {
-              final candidate = (formInfo[i] as String).trim();
-              if (candidate.isNotEmpty && 
-                  candidate != 'null' && 
-                  candidate.length > 2 &&
-                  candidate.length < 300 &&
-                  candidate.toLowerCase() != 'untitled form' &&
-                  !candidate.startsWith('http') &&
-                  !candidate.contains('@') &&
-                  !candidate.startsWith('[')) { 
-                formTitle = candidate;
-                print('Found form title in formInfo[$i]: "$formTitle"');
-                break;
+        // Comprehensive cleaner to handle HTML, entities, and preserve formatting
+        String clean(dynamic input) {
+          if (input == null || input is! String || input == 'null') return '';
+          
+          // 1. Decode common HTML entities first
+          String decoded = (input as String)
+            .replaceAll('&amp;', '&')
+            .replaceAll('&quot;', '"')
+            .replaceAll('&#39;', "'")
+            .replaceAll('&lt;', '<')
+            .replaceAll('&gt;', '>')
+            .replaceAll('&nbsp;', ' ')
+            .replaceAll('&#10;', '\n');
+            
+          // 2. Convert structural tags to newlines
+          String structured = decoded
+            .replaceAll(RegExp(r'<(br|p|div|li)[^>]*>', caseSensitive: false), '\n')
+            .replaceAll(RegExp(r'</(p|div|li)>', caseSensitive: false), '\n');
+            
+          // 3. Remove remaining HTML tags
+          String stripped = structured.replaceAll(RegExp(r'<[^>]*>'), '');
+            
+          // 4. Normalize lines but preserve the vertical structure
+          List<String> lines = stripped.split('\n');
+          List<String> processedLines = [];
+          for (var line in lines) {
+            final trimmed = line.trim();
+            if (trimmed.isNotEmpty) {
+              processedLines.add(trimmed);
+            }
+          }
+          
+          return processedLines.join('\n');
+        }
+
+        // Normalization for deduplication (strips everything for comparison)
+        String normalize(String s) {
+          return s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        }
+
+        // Expanded system metadata and post-submission filter
+        bool isSystemMetadata(String s) {
+          final lower = s.toLowerCase();
+          return lower == 'null' ||
+                 lower.contains('submitted successfully') || 
+                 lower.contains('response has been recorded') ||
+                 lower.contains('further changes to be made') ||
+                 lower.contains('thank you for your response') ||
+                 lower.contains('switch accounts') ||
+                 lower.contains('indicates required question') ||
+                 lower.contains('click to edit') ||
+                 lower.contains('submit another response') ||
+                 lower.contains('edit your response') ||
+                 lower.contains('see previous responses');
+        }
+
+        // Indices where titles usually live: 1, 8, 24
+        for (int idx in [8, 1, 24, 0, 2]) {
+          if (formInfo.length > idx && formInfo[idx] is String) {
+            final cand = clean(formInfo[idx]);
+            if (cand.length > 3 && !cand.toLowerCase().contains('google')) {
+              if (primaryTitle == null) {
+                primaryTitle = cand;
+                print('Targeted Strategy: Identified Primary Title at index $idx: "$primaryTitle"');
+              } else if (normalize(cand) != normalize(primaryTitle) && 
+                         !instructionBlocks.any((b) => normalize(b) == normalize(cand))) {
+                instructionBlocks.add(cand);
               }
             }
           }
         }
-        
-        // Extract description - aggregate multiple strings from formInfo indices
-        List<String> descriptionParts = [];
-        for (int i = 2; i < formInfo.length && i < 15; i++) {
-          if (formInfo[i] != null && formInfo[i] is String) {
-            final candidate = (formInfo[i] as String).trim();
-            if (candidate.isNotEmpty && 
-                candidate.length > 5 && 
-                candidate.length < 5000 &&
-                !candidate.startsWith('http') &&
-                !candidate.contains('@') &&
-                !candidate.toLowerCase().contains('untitled') &&
-                !candidate.startsWith('[')) {
-              // Avoid adding the title again if it's identical
-              if (candidate != formTitle) {
-                descriptionParts.add(candidate);
-                print('Added to description parts from formInfo[$i]: "${candidate.substring(0, candidate.length > 100 ? 100 : candidate.length)}..."');
+
+        // Strategy 2: Aggregated Scan for anything missed (up to index 60)
+        for (int i = 0; i < formInfo.length && i < 60; i++) {
+          final item = formInfo[i];
+          if (item is String) {
+            final cand = clean(item);
+            if (cand.length > 5 && !cand.toLowerCase().contains('google') && !isSystemMetadata(cand)) {
+              if (primaryTitle == null) {
+                primaryTitle = cand;
+              } else if (normalize(cand) != normalize(primaryTitle) && 
+                         !instructionBlocks.any((b) => normalize(b) == normalize(cand))) {
+                instructionBlocks.add(cand);
               }
             }
-          }
-        }
-        
-        if (descriptionParts.isNotEmpty) {
-          description = descriptionParts.join('\n\n');
-        }
-        
-        // Also try to find description in nested structures
-        if (description == null || description.isEmpty) {
-          for (var item in formInfo) {
-            if (item is List) {
-              for (var subItem in item) {
-                if (subItem is String && subItem.trim().length > 10 && subItem.trim().length < 1000) {
-                  final candidate = subItem.trim();
-                  if (!candidate.startsWith('http') && 
-                      !candidate.contains('@') &&
-                      !candidate.toLowerCase().contains('untitled') &&
-                      candidate != formTitle) {
-                    description = candidate;
-                    print('Extracted description from nested structure');
-                    break;
+          } else if (item is List) {
+            for (var sub in item) {
+              if (sub is String) {
+                final cand = clean(sub);
+                if (cand.length > 5 && !isSystemMetadata(cand)) {
+                  if (primaryTitle == null) primaryTitle = cand;
+                  else if (normalize(cand) != normalize(primaryTitle) && 
+                           !instructionBlocks.any((b) => normalize(b) == normalize(cand))) {
+                    instructionBlocks.add(cand);
                   }
                 }
               }
-              if (description != null) break;
             }
+          }
+        }
+
+        if (primaryTitle != null) {
+          formTitle = primaryTitle;
+          if (instructionBlocks.isNotEmpty) {
+            description = instructionBlocks.join('\n\n');
           }
         }
       }
       
-      // Use fallback title if we still don't have a good one
-      if ((formTitle == 'Google Form' || formTitle.isEmpty) && fallbackTitle != null && fallbackTitle.isNotEmpty) {
-        formTitle = fallbackTitle;
-        print('Using fallback title from HTML: "$formTitle"');
-      }
-      
-      // Also try searching recursively for title-like strings ONLY if we don't have a fallback
-      if ((formTitle == 'Google Form' || formTitle.isEmpty) && fallbackTitle == null) {
-        print('Title still not found, searching recursively...');
+      // Final fallback for title: search recursively in the whole structure
+      if (formTitle == 'Google Form' || formTitle == 'Web Form' || formTitle.isEmpty) {
         final foundTitle = _findTitleInDataStructure(formData);
-        if (foundTitle != null && foundTitle.isNotEmpty && foundTitle.length < 200) {
+        if (foundTitle != null) {
           formTitle = foundTitle;
           print('Found title recursively: "$formTitle"');
         }
       }
       
-      // Final fallback: use extracted HTML title if available
-      if ((formTitle == 'Google Form' || formTitle.isEmpty) && fallbackTitle != null && fallbackTitle.isNotEmpty) {
-        formTitle = fallbackTitle;
-      }
-      
       print('Final extracted form title: "$formTitle"');
       
-      // Extract questions - Google Forms structure can vary
-      // Common structure: [null, [formInfo, [questions...], ...], ...]
-      // Or: [null, [formInfo], [questions...], ...]
       final questions = <Map<String, dynamic>>[];
       int currentPage = 1;
       int fieldOrder = 0;
-      
-      print('Form data structure: length=${formData.length}');
-      if (formData.length > 1) {
-        print('formData[1] type: ${formData[1].runtimeType}');
-        if (formData[1] is List) {
-          print('formData[1] length: ${(formData[1] as List).length}');
-          // Print first few items to understand structure
-          for (int i = 0; i < (formData[1] as List).length && i < 5; i++) {
-            final item = (formData[1] as List)[i];
-            print('formData[1][$i] type: ${item.runtimeType}, value: ${item is String ? item : (item is List ? 'List[${(item as List).length}]' : item.toString().substring(0, item.toString().length > 100 ? 100 : item.toString().length))}');
+
+      // 1. Check for email collection settings in Google Forms
+      bool collectEmail = false;
+      if (formData.length > 1 && formData[1] is List) {
+        final formInfo = formData[1] as List;
+        
+        // Strategy A: Check specific common indices in formInfo (10, 16, 21 are common)
+        final settingIndices = [10, 16, 21, 24];
+        for (int idx in settingIndices) {
+          if (formInfo.length > idx) {
+            final val = formInfo[idx];
+            if (val == 1 || val == true) {
+              collectEmail = true;
+              print('Found email collection flag at formInfo[$idx]');
+              break;
+            } else if (val is List && val.isNotEmpty && (val[0] == 1 || val[0] == true)) {
+              collectEmail = true;
+              print('Found email collection flag in list at formInfo[$idx]');
+              break;
+            }
+          }
+        }
+        
+        // Strategy B: Deep search for email collection flag or string
+        if (!collectEmail) {
+          for (var item in formInfo) {
+            if (item is List && item.length > 1 && (item[0] == 1 || item[0] == true)) {
+              // This is a common pattern for various form settings
+              // We'll be careful here, but if we haven't found email yet, it's a good candidate
+              // if it's in a list at a high index
+            }
           }
         }
       }
+
+      if (collectEmail) {
+        print('Form has email collection enabled, adding Email field');
+        questions.add({
+          'name': 'Email Address',
+          'type': 'email',
+          'required': true,
+          'page': 1,
+          'order': fieldOrder++,
+          'description': 'Record email as the address to be included with your response',
+        });
+      }
+
+      // 2. Add Form Instructions as a static field if description exists
+      if (description != null && description.isNotEmpty) {
+        print('Adding Form Instructions as a static field');
+        questions.add({
+          'name': 'Form Instructions',
+          'type': 'static',
+          'required': false,
+          'page': 1,
+          'order': fieldOrder++,
+          'description': description,
+        });
+      }
       
-      // Try multiple possible structures
+      // Extract questions - Google Forms structure can vary
+      
+      print('Form data structure: length=${formData.length}');
+      
+      // Try multiple possible structures for questions array
       List<dynamic>? questionsArray;
       
-      if (formData.length > 1 && formData[1] is List) {
-        final formStructure = formData[1] as List;
-        print('Form structure length: ${formStructure.length}');
+      // Look everywhere for a list that contains question structures
+      void findQuestionsInStructure(dynamic struct) {
+        if (questionsArray != null) return;
         
-        // Structure 1: Questions in formStructure[1]
-        if (formStructure.length > 1 && formStructure[1] is List) {
-          questionsArray = formStructure[1] as List;
-          print('Found questions array in formStructure[1] with ${questionsArray.length} items');
-        }
-        
-        // Structure 2: Questions might be in other indices
-        if (questionsArray == null || questionsArray.isEmpty) {
-          for (int i = 0; i < formStructure.length; i++) {
-            if (formStructure[i] is List) {
-              final candidate = formStructure[i] as List;
-              // Check if this looks like a questions array (contains question-like structures)
-              if (candidate.isNotEmpty && candidate.any((item) => item is List && item.isNotEmpty)) {
-                // Count potential questions
-                int potentialQuestions = 0;
-                for (var item in candidate) {
-                  if (item is List && item.isNotEmpty) {
-                    // Check if it looks like a question (has strings that could be question text)
-                    for (var subItem in item) {
-                      if (subItem is String && subItem.length > 3 && subItem.length < 200) {
-                        potentialQuestions++;
-                        break;
-                      }
-                    }
-                  }
-                }
-                if (potentialQuestions > 0) {
-                  questionsArray = candidate;
-                  print('Found potential questions array in formStructure[$i] with $potentialQuestions potential questions');
-                  break;
-                }
+        if (struct is List) {
+          // Check if this list looks like a questions array
+          // Google Form questions are lists of lists where sub-lists start with a small integer ID or have a specific structure
+          int matches = 0;
+          for (var item in struct) {
+            if (item is List && item.length >= 3) {
+              // Typically: [id, "Question Text", description, type, options...]
+              if (item[0] is int || (item.length > 1 && item[1] is String && (item[1] as String).length > 2)) {
+                matches++;
               }
             }
           }
+          
+          if (matches >= 1) {
+            questionsArray = struct;
+            return;
+          }
+          
+          // Recurse
+          for (var item in struct) {
+            findQuestionsInStructure(item);
+            if (questionsArray != null) return;
+          }
+        } else if (struct is Map) {
+          for (var value in struct.values) {
+            findQuestionsInStructure(value);
+            if (questionsArray != null) return;
+          }
         }
-        
-        // Structure 3: Questions might be directly in formData[2] or later
-        if ((questionsArray == null || questionsArray.isEmpty) && formData.length > 2) {
-          for (int i = 2; i < formData.length && i < 10; i++) {
-            if (formData[i] is List) {
-              final candidate = formData[i] as List;
-              if (candidate.isNotEmpty) {
-                questionsArray = candidate;
-                print('Found potential questions array in formData[$i]');
-                break;
-              }
-            }
+      }
+
+      findQuestionsInStructure(formData);
+      
+      if (questionsArray != null) {
+        print('Found questions array with ${questionsArray!.length} items using deep search');
+      } else {
+        // Fallback to traditional indices if deep search failed
+        if (formData.length > 1 && formData[1] is List) {
+          final fs = formData[1] as List;
+          if (fs.length > 1 && fs[1] is List) {
+            questionsArray = fs[1] as List;
+            print('Found questions array in traditional index [1][1]');
           }
         }
       }
       
       // If we found questions, parse them
-      if (questionsArray != null && questionsArray.isNotEmpty) {
-        print('Processing ${questionsArray.length} question items...');
-        for (int i = 0; i < questionsArray.length; i++) {
-          final questionItem = questionsArray[i];
+      final qa = questionsArray;
+      if (qa != null && qa.isNotEmpty) {
+        print('Processing ${qa.length} question items...');
+        for (int i = 0; i < qa.length; i++) {
+          final questionItem = qa[i];
           if (questionItem is List && questionItem.isNotEmpty) {
             // Check if this is a section header (page break)
             final isSection = _isGoogleFormsSection(questionItem);
@@ -1902,6 +1949,42 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
         // Try recursive search as last resort
         print('Attempting recursive search...');
         _findQuestionsRecursive(formData, questions, currentPage, fieldOrder);
+      }
+      
+      // 4. Last Resort: If no email field was found but it seems to be in the form, add it
+      bool hasEmailField = questions.any((q) => 
+        q['name']?.toString().toLowerCase().contains('email') == true || 
+        q['type'] == 'email');
+      
+      if (!hasEmailField) {
+        // Search deeper for any string "Email" in the WHOLE structure
+        bool foundEmailMention = false;
+        void searchForEmail(dynamic item) {
+          if (foundEmailMention) return;
+          if (item is String) {
+            final s = item.toLowerCase();
+            if (s == 'email' || s == 'email address' || s == 'record email' || s.contains('email to be included')) {
+              foundEmailMention = true;
+            }
+          } else if (item is List) {
+            for (var element in item) searchForEmail(element);
+          } else if (item is Map) {
+            for (var value in item.values) searchForEmail(value);
+          }
+        }
+        searchForEmail(formData);
+        
+        if (foundEmailMention) {
+          print('Found "Email" mention in data structure, adding Email field as last resort');
+          questions.add({
+            'name': 'Email Address',
+            'type': 'email',
+            'required': true,
+            'page': 1,
+            'order': -5, // Put it at the very top (before instructions)
+            'description': 'Please enter your email address as required by the form',
+          });
+        }
       }
       
       // Sort questions by order to preserve original sequence
@@ -2159,18 +2242,15 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
             }
             
             // Check for required flag
-            // Required flag can be in different places:
-            // 1. In the last element of the question array (often at index 10 or last)
-            // 2. In the options structure (1 = required)
-            // 3. As a separate field in the structure
-            
-            // Check last element (common location for required flag)
-            if (questionData.length > 10) {
-              final lastElement = questionData[questionData.length - 1];
-              if (lastElement is List && lastElement.isNotEmpty) {
-                // Last element is often: [null, questionText] or contains required info
-                for (var item in lastElement) {
-                  if (item == 1 || item == true || item == 'required') {
+            // Google Forms stores required flag in multiple locations
+            // Common index for required flag is 4[0][6] or last element
+            if (questionData.length > 4 && questionData[4] is List && (questionData[4] as List).isNotEmpty) {
+              final optionsList = questionData[4] as List;
+              if (optionsList[0] is List) {
+                final firstOpt = optionsList[0] as List;
+                // Check multiple indices that commonly contain required flag
+                for (int idx in [2, 3, 4, 5, 6, 7, 8]) {
+                  if (firstOpt.length > idx && (firstOpt[idx] == 1 || firstOpt[idx] == true)) {
                     isRequired = true;
                     break;
                   }
@@ -2178,16 +2258,11 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
               }
             }
             
-            // Also check in options structure (1 often means required)
-            if (!isRequired && questionData.length > 4 && questionData[4] is List) {
-              final optionsList = questionData[4] as List;
-              if (optionsList.isNotEmpty && optionsList[0] is List) {
-                final firstOption = optionsList[0] as List;
-                // Look for required indicator - but be careful not to confuse with option values
-                // Required is usually at a specific position in the option structure
-                if (firstOption.length > 6 && firstOption[6] == 1) {
-                  isRequired = true;
-                }
+            if (!isRequired && questionData.isNotEmpty) {
+              final last = questionData.last;
+              if (last == 1 || last == true) isRequired = true;
+              else if (last is List && last.isNotEmpty) {
+                if (last.contains(1) || last.contains(true)) isRequired = true;
               }
             }
           }
@@ -2200,14 +2275,13 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
           final item = questionData[i];
           if (item is String) {
             final trimmed = item.trim();
-            if (trimmed.length >= 3 && 
-                trimmed.length <= 200 && 
+            if (trimmed.length >= 2 && 
+                trimmed.length <= 500 && 
                 !trimmed.startsWith('http') &&
-                !trimmed.contains('@') &&
                 !trimmed.toLowerCase().contains('google') &&
                 trimmed != 'null') {
               questionText = trimmed;
-              print('    Found question text at index $i: "$questionText"');
+              print('    Found question text at index $i: "$questionText" (Strategy 2)');
               
               // Try to find type after this string
               if (i + 2 < questionData.length) {
@@ -2576,41 +2650,28 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
       return null;
     }
     
-    // Try index 0 first (sometimes option text is first)
+    // Try index 0 first
     if (optionList[0] is String) {
       final text = (optionList[0] as String).trim();
-      if (text.isNotEmpty && text != 'null' && text.length < 200 &&
-          !text.startsWith('http') && !text.contains('@')) {
+      if (text.isNotEmpty && text != 'null' && text.length < 500 && !text.startsWith('http')) {
         return text;
       }
     }
     
-    // Try index 1 (most common for option text)
+    // Try index 1
     if (optionList.length > 1 && optionList[1] is String) {
       final text = (optionList[1] as String).trim();
-      // Skip if it's null or looks like metadata
-      if (optionList[0] == null && text.length > 50) {
-        // Likely metadata, skip
-        return null;
-      }
-      if (text.isNotEmpty && text != 'null' && text.length < 200 &&
-          !text.startsWith('http') && !text.contains('@')) {
+      if (text.isNotEmpty && text != 'null' && text.length < 500 && !text.startsWith('http')) {
         return text;
       }
     }
     
-    // Try any string in the list (but skip if it's in a [null, text] pattern)
+    // Try any string
     for (int i = 0; i < optionList.length; i++) {
       final item = optionList[i];
       if (item is String) {
         final text = item.trim();
-        // Skip if previous item was null and this looks like a field name
-        if (i > 0 && optionList[i - 1] == null && text.length > 30) {
-          continue; // Likely metadata
-        }
-        if (text.isNotEmpty && text != 'null' && text.length >= 1 && text.length < 200 &&
-            !text.startsWith('http') && !text.contains('@') && 
-            !text.toLowerCase().contains('google')) {
+        if (text.isNotEmpty && text != 'null' && text.length < 500 && !text.startsWith('http') && !text.toLowerCase().contains('google')) {
           return text;
         }
       }

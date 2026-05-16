@@ -85,7 +85,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           }
           
           // Sort in descending order (most recent first)
-          return bDate.compareTo(aDate);
+          return bDate!.compareTo(aDate!);
         });
         
         setState(() {

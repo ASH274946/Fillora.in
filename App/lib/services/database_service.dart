@@ -147,7 +147,6 @@ class DatabaseService {
         }
         return form.id;
       }
-      }
       
       // SECURITY: Encrypt sensitive data before saving
       final formMap = form.toMap();
