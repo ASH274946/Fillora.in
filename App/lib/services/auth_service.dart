@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class AuthService {
   static final AuthService _instance = AuthService._internal();
@@ -11,6 +12,10 @@ class AuthService {
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
+  );
+  
+  final _secureStorage = const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
 
   // Get current user
@@ -168,6 +173,9 @@ class AuthService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('user_data');
       await prefs.remove('auth_provider');
+      
+      // Clear secure storage
+      await _secureStorage.deleteAll();
     } catch (e) {
       print('Error signing out: $e');
     }
@@ -179,7 +187,16 @@ class AuthService {
       final prefs = await SharedPreferences.getInstance();
       final userDataJson = prefs.getString('user_data');
       if (userDataJson != null) {
-        return json.decode(userDataJson) as Map<String, dynamic>;
+        final Map<String, dynamic> userData = json.decode(userDataJson);
+        
+        // Enrich with tokens from secure storage
+        final accessToken = await _secureStorage.read(key: 'access_token');
+        final idToken = await _secureStorage.read(key: 'id_token');
+        
+        if (accessToken != null) userData['accessToken'] = accessToken;
+        if (idToken != null) userData['idToken'] = idToken;
+        
+        return userData;
       }
       
       // If no saved data but Google user is signed in, get from Google
@@ -209,10 +226,21 @@ class AuthService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_provider', userData['provider'] ?? '');
-      await prefs.setBool('is_signed_in', true);
+      // SECURITY: Extract sensitive tokens and save to secure storage
+      if (userData.containsKey('accessToken')) {
+        await _secureStorage.write(key: 'access_token', value: userData['accessToken']);
+      }
+      if (userData.containsKey('idToken')) {
+        await _secureStorage.write(key: 'id_token', value: userData['idToken']);
+      }
       
-      // Save full user data as JSON
-      final userDataJson = json.encode(userData);
+      // Create a copy without sensitive tokens for plain preferences
+      final safeUserData = Map<String, dynamic>.from(userData);
+      safeUserData.remove('accessToken');
+      safeUserData.remove('idToken');
+      
+      // Save non-sensitive user data as JSON
+      final userDataJson = json.encode(safeUserData);
       await prefs.setString('user_data', userDataJson);
       
       // Save member since date if not already set

@@ -33,10 +33,12 @@ class AppConfig {
   static const String azureBackendApiUrl = 'YOUR_AZURE_APP_SERVICE_URL'; // e.g., https://fillora-api.azurewebsites.net/api/
   
   // Legacy Google Services (deprecated - will be removed)
-  static const String geminiApiKey = 'AIzaSyCOy-XsT0McLiwRgXSfpccAHOaezwijqtY';
+  // [SECURITY] Removed hardcoded API key. Use environment variables.
+  static const String geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
   
   // NVIDIA NIM Configuration (OpenAI Compatible)
-  static const String nvidiaApiKey = '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';
+  // [SECURITY] Removed hardcoded API key. Use environment variables.
+  static const String nvidiaApiKey = String.fromEnvironment('NVIDIA_API_KEY');
   static const String nvidiaBaseUrl = 'https://integrate.api.nvidia.com/v1';
   static const String nvidiaModel = 'meta/llama-3.1-8b-instruct'; // Ultra-fast model
   

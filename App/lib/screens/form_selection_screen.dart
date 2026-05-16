@@ -130,104 +130,25 @@ class _FormSelectionScreenState extends State<FormSelectionScreen> {
           key: ValueKey('url_dialog_${DateTime.now().millisecondsSinceEpoch}'),
           isAnalyzing: _isAnalyzing,
           onAnalyze: (url) async {
-            setState(() => _isAnalyzing = true);
+            if (mounted) setState(() => _isAnalyzing = true);
             
-            // Don't clear logs - preserve history
-            DebugLogService().info('Starting form analysis for: $url');
-            
-            // Show simple loading dialog (no debug console - use floating button instead)
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (loadingContext) {
-                return AlertDialog(
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Analyzing Form',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        url,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Check the debug console for detailed logs',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                          fontSize: 12,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-
             try {
-              // Analyze URL and create form
-              final form = await _urlFormService.analyzeUrlAndCreateForm(url);
+              DebugLogService().info('Starting form analysis for: $url');
               
-              if (!context.mounted) return;
-              
-              if (form != null) {
-                DebugLogService().success('✓ Form created successfully with ${form.formData?.length ?? 0} fields');
-                // Wait longer to show the success message and allow user to see logs
-                await Future.delayed(const Duration(seconds: 2));
-                
-                // Close loading dialog
-                if (context.mounted) {
-                  Navigator.of(context).pop();
-                  
-                  // Navigate to conversational form with the created form ID and source
-                  AppLoggerService().logFormAction('Form created from URL', 
-                    formId: form.id, 
-                    formTitle: form.title);
-                  context.go('/conversational-form?formId=${form.id}&from=url');
-                }
-              } else {
-                DebugLogService().error('✗ Failed to create form');
-                DebugLogService().info('Please review the logs above. Close this dialog when done.');
-                // Don't auto-close on error - let user review logs and close manually
-                if (context.mounted) {
-                  AppSnackBar.show(context, 'Failed to analyze form. Check the debug console for details.', isError: true);
-                }
-                // Dialog stays open - user can close manually using the Close button
+              // Navigate directly to conversational form with URL
+              if (context.mounted) {
+                context.go('/conversational-form?url=${Uri.encodeComponent(url)}&from=url');
               }
             } catch (e) {
               if (!context.mounted) return;
               
-              // Check if it's an authentication required error
-              // Check both the exception type and message
-              final isAuthException = e is GoogleFormAuthenticationRequiredException;
-              final errorMessage = e.toString();
-              final isAuthError = isAuthException || 
-                  errorMessage.contains('requires authentication') || 
-                  errorMessage.contains('Please select a Google account') ||
-                  errorMessage.contains('Google Form requires authentication');
+              final isAuthError = e is GoogleFormAuthenticationRequiredException || 
+                  e.toString().contains('requires authentication') || 
+                  e.toString().contains('Please select a Google account');
               
               if (isAuthError) {
-                // Close loading dialog first
-                if (context.mounted) {
-                  Navigator.of(context).pop();
-                }
+                DebugLogService().info('Google Form requires authentication. Opening WebView...');
                 
-                // Show WebView for Google Form authentication
-                DebugLogService().info('Google Form requires authentication. Opening WebView for sign-in...');
-                AppLoggerService().logAuth('Opening WebView for Google Form authentication', provider: 'google');
-                
-                // Navigate to WebView screen
                 final extractedHtml = await Navigator.of(context).push<String>(
                   MaterialPageRoute(
                     builder: (context) => GoogleFormWebViewScreen(formUrl: url),
@@ -235,104 +156,25 @@ class _FormSelectionScreenState extends State<FormSelectionScreen> {
                   ),
                 );
                 
-                if (extractedHtml == null || !context.mounted) {
-                  // User cancelled or closed the WebView
-                  if (mounted) setState(() => _isAnalyzing = false);
+                DebugLogService().info('WebView returned. HTML received: ${extractedHtml != null} (length: ${extractedHtml?.length ?? 0})');
+                
+                if (extractedHtml == null || extractedHtml.isEmpty || !context.mounted) {
+                  DebugLogService().warning('No HTML received from WebView or context unmounted');
                   return;
                 }
                 
-                // Retry form analysis with the extracted HTML
-                DebugLogService().info('Retrying form analysis with HTML from WebView...');
-                AppLoggerService().logFormAction('Retrying form analysis with WebView HTML');
-                
-                // Show loading dialog again
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (loadingContext2) {
-                    return AlertDialog(
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const CircularProgressIndicator(),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Analyzing Form',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Processing form data...',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-                
-                try {
-                  // Use the URL form service to analyze the extracted HTML
-                  // Pass the HTML content directly to the service
-                  DebugLogService().info('Analyzing form with extracted HTML (${extractedHtml.length} chars)...');
-                  final form = await _urlFormService.analyzeUrlAndCreateForm(url, htmlContent: extractedHtml);
-                  
-                  if (!context.mounted) return;
-                  
-                  // Close loading dialog
-                  Navigator.of(context).pop();
-                  
-                  if (form != null) {
-                    DebugLogService().success('✓ Form created successfully with ${form.formData?.length ?? 0} fields');
-                    DebugLogService().info('Form ID: ${form.id}');
-                    DebugLogService().info('Form Title: ${form.title}');
-                    DebugLogService().info('Form Status: ${form.status}');
-                    DebugLogService().info('Form saved to database: ${form.id}');
-                    await Future.delayed(const Duration(seconds: 1));
-                    
-                    AppLoggerService().logFormAction('Form created from URL (WebView)', 
-                      formId: form.id, 
-                      formTitle: form.title);
-                    
-                    // Ensure form is saved to database before navigation
-                    final dbService = DatabaseService();
-                    await dbService.insertForm(form);
-                    DebugLogService().info('Form confirmed saved to database: ${form.id}');
-                    
-                    context.go('/conversational-form?formId=${form.id}&from=url');
-                  } else {
-                    DebugLogService().error('✗ Failed to create form');
-                    if (context.mounted) {
-                      AppSnackBar.show(context, 'Failed to analyze form. Please try again.', isError: true);
-                    }
-                  }
-                } catch (retryError) {
-                  if (!context.mounted) return;
-                  Navigator.of(context).pop();
-                  DebugLogService().error('✗ Error: ${retryError.toString()}');
-                  if (context.mounted) {
-                    AppSnackBar.show(context, 'Error: ${retryError.toString()}', isError: true);
-                  }
-                } finally {
-                  if (mounted) setState(() => _isAnalyzing = false);
+                // Navigate directly to conversational form with HTML and URL
+                if (context.mounted) {
+                  context.go('/conversational-form?url=${Uri.encodeComponent(url)}&from=url', extra: extractedHtml);
                 }
-                
                 return;
               } else {
-                // Other error
-                DebugLogService().error('✗ Error: ${e.toString()}');
-                DebugLogService().info('Please review the logs above. Close this dialog when done.');
                 if (context.mounted) {
-                  AppSnackBar.show(context, 'Error occurred. Check the debug console for details.', isError: true);
+                  AppSnackBar.show(context, 'Error: $e', isError: true);
                 }
               }
             } finally {
-              if (mounted) {
-                setState(() => _isAnalyzing = false);
-              }
+              if (mounted) setState(() => _isAnalyzing = false);
             }
           },
         );

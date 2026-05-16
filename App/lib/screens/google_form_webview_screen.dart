@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import '../services/debug_log_service.dart';
 import '../services/app_logger_service.dart';
+import '../services/auth_service.dart';
 
 /// Screen that opens Google Form in a WebView to allow user to sign in
 /// and then extracts the form HTML for processing
@@ -28,6 +29,8 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
   Timer? _urlCheckTimer;
   bool _isExtracting = false;
   String _loadingMessage = 'Fetching form...';
+  String? _userEmail;
+  String? _accessToken;
 
   @override
   void initState() {
@@ -35,8 +38,62 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
     AppLoggerService().logScreenEvent('GoogleFormWebViewScreen', 'Initialized', 
       details: {'formUrl': widget.formUrl});
     
+    _initializeUserData();
     _initializeWebView();
     _startUrlCheckTimer();
+  }
+
+  Future<void> _initializeUserData() async {
+    try {
+      final authService = AuthService();
+      final userData = await authService.getCurrentUser();
+      if (userData != null && mounted) {
+        setState(() {
+          _userEmail = userData['email'];
+          _accessToken = userData['accessToken'];
+        });
+        DebugLogService().info('WebView: Initialized with user email: $_userEmail');
+        
+        // Reload with headers and login hints if we have them
+        if (_accessToken != null || _userEmail != null) {
+          final urlWithHint = _addLoginHint(widget.formUrl, _userEmail);
+          
+          final headers = <String, String>{};
+          // SECURITY: Only send Authorization header to trusted Google domains
+          if (_accessToken != null && _isTrustedGoogleDomain(urlWithHint)) {
+            headers['Authorization'] = 'Bearer $_accessToken';
+            DebugLogService().info('WebView: Sending auth header to trusted domain');
+          } else if (_accessToken != null) {
+            DebugLogService().warning('WebView: NOT sending auth header to untrusted domain: $urlWithHint');
+          }
+          
+          _controller.loadRequest(
+            Uri.parse(urlWithHint),
+            headers: headers,
+          );
+        }
+      }
+    } catch (e) {
+      DebugLogService().error('Error getting user data for WebView: $e');
+    }
+  }
+
+  String _addLoginHint(String url, String? email) {
+    if (email == null || email.isEmpty) return url;
+    try {
+      final uri = Uri.parse(url);
+      final params = Map<String, String>.from(uri.queryParameters);
+      
+      // Add Google-specific login hints
+      params['login_hint'] = email;
+      params['Email'] = email;
+      // authuser=email is often used by Google for multi-account sessions
+      params['authuser'] = email;
+      
+      return uri.replace(queryParameters: params).toString();
+    } catch (e) {
+      return url;
+    }
   }
 
   @override
@@ -84,12 +141,14 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (String url) {
+            final isForm = _isFormPage(url);
             setState(() {
-              _isLoading = true;
-              _errorMessage = null; // Clear any previous errors
-              _loadingMessage = 'Fetching form...';
+              // Only show full loading overlay for form pages or if we're already extracting
+              _isLoading = isForm || _isExtracting;
+              _errorMessage = null; 
+              _loadingMessage = isForm ? 'Fetching form...' : 'Loading...';
             });
-            DebugLogService().info('WebView: Page started loading - $url');
+            DebugLogService().info('WebView: Page started loading - $url (isForm: $isForm)');
             AppLoggerService().logRouteChange('WebView: $url');
           },
           onPageFinished: (String url) async {
@@ -126,19 +185,39 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
               });
               // Wait a bit more for the form to fully render and JavaScript to initialize
               await Future.delayed(const Duration(seconds: 3));
-              // Automatically extract the form HTML
-              await _extractFormHtml();
+              // Automatically extract the form HTML if not already done
+              if (!_htmlCompleter.isCompleted && !_isExtracting) {
+                await _extractFormHtml();
+              }
             } else if (_isSecurityOrAccountPage(url)) {
               // We're on a security checkup, password change, or account selection page
               // These pages should eventually redirect to the form, so we just wait
               DebugLogService().info('WebView: On security/account page, waiting for redirect to form...');
               setState(() {
+                _isLoading = false; // Allow user to interact with security pages
                 _loadingMessage = 'Authenticating...';
               });
             } else if (url.contains('accounts.google.com') || url.contains('signin')) {
               // We're on a sign-in page, wait for user to complete sign-in
               DebugLogService().info('WebView: On sign-in page, waiting for user action...');
+              
+              // Try to inject email if we have it and it's not already filled
+              if (_userEmail != null && url.contains('identifier')) {
+                _controller.runJavaScript('''
+                  (function() {
+                    const emailInput = document.querySelector('input[type="email"]');
+                    if (emailInput && !emailInput.value) {
+                      emailInput.value = '$_userEmail';
+                      // Try to click next
+                      const nextButton = document.querySelector('#identifierNext');
+                      if (nextButton) nextButton.click();
+                    }
+                  })();
+                ''');
+              }
+              
               setState(() {
+                _isLoading = false; // IMPORTANT: Allow user to interact with sign-in page
                 _loadingMessage = 'Signing in...';
               });
             }
@@ -213,12 +292,10 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
             }
             _urlCheckTimer?.cancel();
             _htmlCompleter.complete(html);
-            // Automatically close the WebView and return the HTML after a short delay
-            Future.delayed(const Duration(milliseconds: 800), () {
-              if (mounted) {
-                Navigator.of(context).pop(html);
-              }
-            });
+            // Automatically close the WebView and return the HTML immediately
+            if (mounted) {
+              Navigator.of(context).pop(html);
+            }
           }
         },
       );
@@ -331,16 +408,47 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
         await _controller.runJavaScript('''
           (function() {
             try {
-              const html = document.documentElement.outerHTML;
-              if (html && html.length > 100) {
-                console.log('Sending HTML via JavaScriptChannel, length: ' + html.length);
-                // Send HTML via JavaScriptChannel (will be received by HtmlExtractor)
-                HtmlExtractor.postMessage(html);
+              // Extract the essential parts of the form
+              // First, look for the Google Forms data variable
+              let formData = "";
+              const scripts = document.querySelectorAll('script');
+              for (let i = 0; i < scripts.length; i++) {
+                if (scripts[i].innerHTML && scripts[i].innerHTML.includes('FB_PUBLIC_LOAD_DATA')) {
+                  formData = scripts[i].innerHTML;
+                  break;
+                }
+              }
+
+              // Create a simplified version of the body
+              const bodyClone = document.body.cloneNode(true);
+              
+              // Remove non-essential heavy tags
+              const tagsToRemove = ['svg', 'iframe', 'noscript', 'canvas', 'video', 'audio', 'footer', 'nav'];
+              tagsToRemove.forEach(tag => {
+                const elements = bodyClone.querySelectorAll(tag);
+                elements.forEach(el => el.remove());
+              });
+              
+              // Remove comments and hidden elements to save space
+              const iterator = document.createNodeIterator(bodyClone, NodeFilter.SHOW_COMMENT, null, false);
+              let node;
+              while (node = iterator.nextNode()) {
+                node.parentNode.removeChild(node);
+              }
+
+              const cleanHtml = "<!-- GOOGLE_FORM_DATA_START -->" + formData + "<!-- GOOGLE_FORM_DATA_END -->" + bodyClone.innerHTML;
+              
+              if (cleanHtml && cleanHtml.length > 100) {
+                console.log('Sending cleaned HTML via JavaScriptChannel, length: ' + cleanHtml.length);
+                HtmlExtractor.postMessage(cleanHtml);
               } else {
-                console.error('HTML extraction failed: HTML too short or empty');
+                // Fallback to basic outerHTML if cleaning failed
+                HtmlExtractor.postMessage(document.documentElement.outerHTML);
               }
             } catch(e) {
               console.error('HTML extraction error: ' + e.message);
+              // Final fallback
+              try { HtmlExtractor.postMessage(document.documentElement.outerHTML); } catch(e2) {}
             }
           })();
         ''');
@@ -386,14 +494,6 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
                 details: {'htmlLength': htmlString.length});
               
               if (!_htmlCompleter.isCompleted) {
-                if (mounted) {
-                  setState(() {
-                    _extractedHtml = htmlString;
-                    _isExtracting = false;
-                    _isLoading = false;
-                    _loadingMessage = 'Form extracted successfully!';
-                  });
-                }
                 _urlCheckTimer?.cancel();
                 _htmlCompleter.complete(htmlString);
                 Future.delayed(const Duration(milliseconds: 800), () {
@@ -433,35 +533,48 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
 
   Future<String?> getExtractedHtml() => _htmlCompleter.future;
 
-  /// Check if the current URL is the actual form page (not sign-in, security, etc.)
+  /// Verify if the URL is a trusted Google Forms page
   bool _isFormPage(String url) {
-    // Must be a Google Forms URL
-    if (!url.contains('docs.google.com/forms')) {
+    try {
+      final uri = Uri.parse(url);
+      // Strict host check to prevent bypasses like attacker.com/docs.google.com/forms
+      final host = uri.host.toLowerCase();
+      if (host != 'docs.google.com' && host != 'forms.gle') {
+        return false;
+      }
+      
+      // Must NOT be an accounts/sign-in page
+      if (url.contains('accounts.google.com') || 
+          url.contains('signin') || 
+          url.contains('ServiceLogin') ||
+          url.contains('InteractiveLogin')) {
+        return false;
+      }
+      
+      // Check for security/account pages
+      if (_isSecurityOrAccountPage(url)) {
+        return false;
+      }
+      
+      // Should contain viewform or edit in the path
+      return url.contains('/viewform') || url.contains('/edit');
+    } catch (e) {
       return false;
     }
-    
-    // Must NOT be an accounts/sign-in page
-    if (url.contains('accounts.google.com') || 
-        url.contains('signin') || 
-        url.contains('ServiceLogin') ||
-        url.contains('InteractiveLogin')) {
+  }
+
+  /// Verify if the host is a trusted Google domain for sending tokens
+  bool _isTrustedGoogleDomain(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final host = uri.host.toLowerCase();
+      // Only send tokens to official Google domains
+      return host == 'docs.google.com' || 
+             host == 'accounts.google.com' || 
+             host.endsWith('.google.com');
+    } catch (e) {
       return false;
     }
-    
-    // Must NOT be a security checkup or password change page
-    if (url.contains('security') || 
-        url.contains('changepassword') || 
-        url.contains('speedbump') ||
-        url.contains('CheckCook')) {
-      return false;
-    }
-    
-    // Should contain viewform or edit in the path
-    if (url.contains('/viewform') || url.contains('/edit')) {
-      return true;
-    }
-    
-    return false;
   }
 
   /// Check if the current URL is a security or account management page
@@ -470,16 +583,23 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
            url.contains('changepassword') || 
            url.contains('speedbump') ||
            url.contains('CheckCook') ||
+           url.contains('challenge') ||
            url.contains('myaccount.google.com');
+  }
+
+  /// Check if the current URL is a password challenge page
+  bool _isPasswordPage(String url) {
+    return url.contains('challenge/pwd') || url.contains('password');
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isSignInOrSecurity = _controller.currentUrl().then((url) => url != null && !_isFormPage(url)).catchError((_) => true);
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Processing Form'),
+        title: Text(_isFormPage(widget.formUrl) ? 'Analyzing Form' : 'Sign in to Google'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () {
@@ -507,54 +627,93 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
       ),
       body: Stack(
         children: [
-          // WebView runs in background but is hidden with opacity 0
-          Opacity(
-            opacity: 0.0,
-            child: IgnorePointer(
-              ignoring: true,
-              child: WebViewWidget(controller: _controller),
-            ),
-          ),
-          // Loading screen - always visible on top
-          Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: theme.scaffoldBackgroundColor,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const CircularProgressIndicator(
-                    strokeWidth: 3,
-                  ),
-                  const SizedBox(height: 24),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Text(
-                      _loadingMessage,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
+          // WebView is visible when not extracting and not showing error
+          WebViewWidget(controller: _controller),
+          
+          // Loading overlay - only shown when explicitly loading or extracting
+          if (_isLoading || _isExtracting)
+            Container(
+              width: double.infinity,
+              height: double.infinity,
+              color: theme.scaffoldBackgroundColor.withOpacity(0.9),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(
+                      strokeWidth: 3,
                     ),
-                  ),
-                  if (_isExtracting) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 24),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 32),
                       child: Text(
-                        'Analyzing form structure...',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        _loadingMessage,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
                         ),
                         textAlign: TextAlign.center,
                       ),
                     ),
+                    if (_isExtracting) ...[
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
+                          'Analyzing form structure...',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
+            
+          // Helper overlay for sign-in (if not on form page and not loading)
+          FutureBuilder<String?>(
+            future: _controller.currentUrl(),
+            builder: (context, snapshot) {
+              final url = snapshot.data;
+              if (url != null && !_isFormPage(url) && !_isLoading && !_isExtracting && _errorMessage == null) {
+                final isPasswordPage = _isPasswordPage(url);
+                return Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    color: isPasswordPage ? Colors.amber.shade100 : theme.colorScheme.primaryContainer,
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isPasswordPage ? Icons.security : Icons.lock_outline, 
+                          size: 16, 
+                          color: isPasswordPage ? Colors.amber.shade900 : theme.colorScheme.onPrimaryContainer
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isPasswordPage 
+                              ? 'Google requires your password for security. You will only need to do this once.'
+                              : 'Please sign in to access this restricted Google Form.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: isPasswordPage ? Colors.amber.shade900 : theme.colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
           ),
+
           if (_errorMessage != null)
             Container(
               color: theme.scaffoldBackgroundColor,
@@ -586,17 +745,10 @@ class _GoogleFormWebViewScreenState extends State<GoogleFormWebViewScreen> {
                           _errorMessage = null;
                           _isLoading = true;
                         });
-                        // Reload the page
                         _controller.reload();
-                        // Also try to restore navigation if needed
-                        Future.delayed(const Duration(seconds: 1), () {
-                          if (mounted && widget.formUrl.isNotEmpty) {
-                            _controller.loadRequest(Uri.parse(widget.formUrl));
-                          }
-                        });
                       },
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF333333), // 20% white, 80% black (lighter grey)
+                        backgroundColor: const Color(0xFF333333),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                       ),

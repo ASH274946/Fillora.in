@@ -454,8 +454,15 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
           path: '/conversational-form',
           builder: (context, state) {
             final formId = state.uri.queryParameters['formId'];
+            final initialUrl = state.uri.queryParameters['url'];
+            final initialHtml = state.extra as String?;
+            
             return BackButtonHandler(
-              child: ConversationalFormScreen(formId: formId),
+              child: ConversationalFormScreen(
+                formId: formId,
+                initialUrl: initialUrl,
+                initialHtml: initialHtml,
+              ),
             );
           },
         ),

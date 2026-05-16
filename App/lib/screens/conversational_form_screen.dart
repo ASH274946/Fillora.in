@@ -10,16 +10,25 @@ import '../services/voice_service.dart';
 import '../services/database_service.dart';
 import '../services/profile_autofill_service.dart';
 import '../models/form_model.dart';
+import 'google_form_webview_screen.dart';
 import '../services/app_logger_service.dart';
 import '../services/azure_translation_service.dart'; // Added: Azure Translation Service
 import '../services/language_service.dart'; // Added: Language Service for codes
+import '../services/url_form_service.dart';
 import '../widgets/app_snackbar.dart';
 
 
 class ConversationalFormScreen extends StatefulWidget {
   final String? formId;
+  final String? initialUrl;
+  final String? initialHtml;
   
-  const ConversationalFormScreen({super.key, this.formId});
+  const ConversationalFormScreen({
+    super.key, 
+    this.formId, 
+    this.initialUrl, 
+    this.initialHtml,
+  });
 
   @override
   State<ConversationalFormScreen> createState() =>
@@ -46,6 +55,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
   bool _isChatOpen = false; // Track if chat interface is open
   final ScrollController _chatScrollController = ScrollController(); // Controller for chat messages
   bool _isSubmitting = false; // Track if form is being submitted
+  bool _isAnalyzing = false; // Track if form is being analyzed
   final ProfileAutofillService _autofillService = ProfileAutofillService();
   
   // Multi-Language Support
@@ -199,18 +209,21 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
           }
         } else {
           print('WARNING: Form not found with ID: ${widget.formId}');
+          if (mounted) {
+            AppSnackBar.show(context, 'Form not found. Redirecting...', isError: true);
+            context.go('/dashboard');
+          }
         }
       } catch (e) {
         print('Error loading form: $e');
         if (mounted) {
-          setState(() {
-            _messages.add({
-              'text': 'Welcome! I\'ll help you fill out this form. Let\'s get started!',
-              'isAI': true,
-            });
-          });
+          AppSnackBar.show(context, 'Error loading form: $e', isError: true);
+          context.go('/dashboard');
         }
       }
+    } else if (widget.initialUrl != null || widget.initialHtml != null) {
+      // Handle direct analysis from URL/HTML
+      _analyzeFromUrl();
     } else {
       // Default welcome message if no form ID
       setState(() {
@@ -219,6 +232,124 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
           'isAI': true,
         });
       });
+    }
+  }
+
+  Future<void> _analyzeFromUrl() async {
+    setState(() {
+      _isAnalyzing = true;
+      _formTitle = 'Analyzing Form...';
+      _messages.add({
+        'text': '🔍 Please wait while I analyze the form structure. This usually takes 10-30 seconds...',
+        'isAI': true,
+      });
+    });
+
+    try {
+      final urlFormService = UrlFormService();
+      final form = await urlFormService.analyzeUrlAndCreateForm(
+        widget.initialUrl ?? '',
+        htmlContent: widget.initialHtml,
+      ).timeout(const Duration(seconds: 45));
+
+      if (form != null && mounted) {
+        setState(() {
+          _form = form;
+          _formTitle = form.title;
+          _isAnalyzing = false;
+          _parseFieldMetadata(form.description);
+          _organizeFieldsByPage();
+          
+          // Add a follow-up message
+          _messages.add({
+            'text': '✅ Form analysis complete! I\'ve found ${(form.formData?.length ?? 0)} fields. Let\'s start filling them out.',
+            'isAI': true,
+          });
+        });
+      } else if (mounted) {
+        setState(() => _isAnalyzing = false);
+        AppSnackBar.show(context, 'Could not analyze form. Redirecting...', isError: true);
+        context.go('/dashboard');
+      }
+    } catch (e) {
+      print('Error during internal analysis: $e');
+      
+      final isAuthError = e is GoogleFormAuthenticationRequiredException || 
+          e.toString().contains('requires authentication') || 
+          e.toString().contains('Please select a Google account');
+
+      if (isAuthError && mounted) {
+        setState(() {
+          _messages.add({
+            'text': '🔑 This form requires authentication. Opening Google Sign-in...',
+            'isAI': true,
+          });
+        });
+
+        // Launch WebView to handle authentication
+        final extractedHtml = await Navigator.of(context).push<String>(
+          MaterialPageRoute(
+            builder: (context) => GoogleFormWebViewScreen(formUrl: widget.initialUrl ?? ''),
+            fullscreenDialog: true,
+          ),
+        );
+
+        if (extractedHtml != null && extractedHtml.isNotEmpty && mounted) {
+          setState(() {
+            _isAnalyzing = true;
+            _messages.add({
+              'text': '✅ Authentication successful! Resuming analysis...',
+              'isAI': true,
+            });
+          });
+          // Re-trigger analysis with the extracted HTML
+          _analyzeFromUrlWithHtml(extractedHtml);
+        } else if (mounted) {
+          setState(() => _isAnalyzing = false);
+          AppSnackBar.show(context, 'Authentication cancelled or failed.', isError: true);
+          context.go('/dashboard');
+        }
+      } else if (mounted) {
+        setState(() => _isAnalyzing = false);
+        AppSnackBar.show(context, 'Analysis failed: $e', isError: true);
+        context.go('/dashboard');
+      }
+    }
+  }
+
+  Future<void> _analyzeFromUrlWithHtml(String html) async {
+    try {
+      final urlFormService = UrlFormService();
+      final form = await urlFormService.analyzeUrlAndCreateForm(
+        widget.initialUrl ?? '',
+        htmlContent: html,
+      ).timeout(const Duration(seconds: 45));
+
+      if (form != null && mounted) {
+        setState(() {
+          _form = form;
+          _formTitle = form.title;
+          _isAnalyzing = false;
+          _parseFieldMetadata(form.description);
+          _organizeFieldsByPage();
+          
+          _messages.add({
+            'text': 'Form analysis complete! I\'ve found ${(form.formData?.length ?? 0)} fields. Let\'s start filling them out.',
+            'isAI': true,
+          });
+        });
+      } else if (mounted) {
+        setState(() => _isAnalyzing = false);
+        AppSnackBar.show(context, 'Could not analyze form after sign-in.', isError: true);
+        context.go('/dashboard');
+      }
+    } catch (e) {
+      print('Error during post-auth analysis: $e');
+      if (mounted) {
+        setState(() => _isAnalyzing = false);
+        AppSnackBar.show(context, 'Analysis failed after sign-in: $e', isError: true);
+        context.go('/dashboard');
+      }
     }
   }
   
@@ -1308,13 +1439,28 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              _formTitle ?? 'Form Filling',
-                              style: theme.textTheme.titleMedium,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _formTitle ?? 'Form Filling',
+                                    style: theme.textTheme.titleMedium,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (_isAnalyzing)
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                              ],
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Page $_currentPage/$_totalPages • ${_calculateProgress(_getCurrentFormData()).toInt()}% Complete',
+                              _isAnalyzing 
+                                  ? 'Analyzing form structure...' 
+                                  : 'Page $_currentPage/$_totalPages • ${_calculateProgress(_getCurrentFormData()).toInt()}% Complete',
                               style: theme.textTheme.bodySmall,
                             ),
                           ],
@@ -1470,19 +1616,12 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                             }
                             final fieldMeta = _fieldMetadata[fieldKey] as Map<String, dynamic>?;
                             final fieldType = fieldMeta?['type'] as String? ?? 'text';
-                            // Skip static fields (they're handled separately if needed)
-                            if (fieldType == 'static') {
-                              return const SizedBox.shrink();
-                            }
+                            // Render all field types, including static ones
                             return _buildFormField(fieldKey, theme);
                           }).toList())
                         else if (_fieldMetadata.isNotEmpty)
                           // Fallback: render all non-static fields from metadata if pagination failed
-                          ...(_fieldMetadata.keys.where((fieldKey) {
-                            final fieldMeta = _fieldMetadata[fieldKey] as Map<String, dynamic>?;
-                            final fieldType = fieldMeta?['type'] as String? ?? 'text';
-                            return fieldType != 'static';
-                          }).map((fieldKey) {
+                          ...(_fieldMetadata.keys.map((fieldKey) {
                             return _buildFormField(fieldKey, theme);
                           }).toList())
                         else if (_form?.formData != null && _form!.formData!.isNotEmpty)

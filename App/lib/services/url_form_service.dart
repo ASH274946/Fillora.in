@@ -650,8 +650,7 @@ class UrlFormService {
       }
       
       // Check if we got a sign-in page or error page instead of the actual form
-      // Skip this check if HTML was provided (already authenticated via WebView)
-      bool isSignInPage = htmlContent == null && (
+      bool isSignInPage = (
           htmlContentToUse.contains('Sign in') || 
           htmlContentToUse.contains('sign in') || 
           htmlContentToUse.contains('Sign-in') ||
@@ -660,6 +659,10 @@ class UrlFormService {
           htmlContentToUse.contains('You need permission') ||
           htmlContentToUse.contains('Access denied')
       );
+      
+      // If HTML was provided via WebView, we shouldn't throw the Auth exception AGAIN
+      // as it would cause an infinite loop. We'll try to extract anyway.
+      final shouldThrowAuthException = htmlContent == null && isSignInPage;
       
       if (isSignInPage) {
         _log('WARNING: Detected sign-in/restricted page instead of form content', LogType.warning);
@@ -727,7 +730,7 @@ class UrlFormService {
             url.contains('goo.gl/forms') ||
             url.contains('tinyurl.com'); // tinyurl.com often redirects to Google Forms
         
-        if (isSignInPage && isGoogleForm) {
+        if (shouldThrowAuthException && isGoogleForm) {
           _log('Google Form requires authentication - account selection needed', LogType.warning);
           throw GoogleFormAuthenticationRequiredException('This Google Form requires authentication. Please select a Google account.');
         }
@@ -738,7 +741,8 @@ class UrlFormService {
           try {
             final geminiApiKey = AppConfig.geminiApiKey;
             final geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=$geminiApiKey';
-            final geminiResult = await _tryExtractWithGeminiUrlOnly(url, geminiUrl, geminiApiKey);
+            final geminiResult = await _tryExtractWithGeminiUrlOnly(url, geminiUrl, geminiApiKey)
+                .timeout(const Duration(seconds: 45));
             if (geminiResult != null && geminiResult['fields'] != null && (geminiResult['fields'] as List).isNotEmpty) {
               _log('Successfully extracted form using Gemini URL-only extraction', LogType.success);
               return geminiResult;
@@ -861,8 +865,13 @@ class UrlFormService {
       // Try multiple patterns to find the data
       String? formDataJson;
       
-      // Pattern 1: Standard FB_PUBLIC_LOAD_DATA
-      var scriptDataMatch = RegExp(r'FB_PUBLIC_LOAD_DATA_\s*=\s*(\[.*?\]);', dotAll: true).firstMatch(htmlContentToUse);
+      // Pattern 0: New GOOGLE_FORM_DATA tag (optimized extraction)
+      var scriptDataMatch = RegExp(r'<!-- GOOGLE_FORM_DATA_START -->(.*?)<!-- GOOGLE_FORM_DATA_END -->', dotAll: true).firstMatch(htmlContentToUse);
+      
+      if (scriptDataMatch == null) {
+        // Pattern 1: Standard FB_PUBLIC_LOAD_DATA
+        scriptDataMatch = RegExp(r'FB_PUBLIC_LOAD_DATA_\s*=\s*(\[.*?\]);', dotAll: true).firstMatch(htmlContentToUse);
+      }
       if (scriptDataMatch == null) {
         // Pattern 2: Without semicolon
         scriptDataMatch = RegExp(r'FB_PUBLIC_LOAD_DATA_\s*=\s*(\[.*?\])', dotAll: true).firstMatch(htmlContentToUse);
@@ -890,12 +899,13 @@ class UrlFormService {
         // Found Google Forms data structure
         try {
           formDataJson = scriptDataMatch.group(1);
-          if (formDataJson != null && formDataJson.length < 50000) {
+          if (formDataJson != null && formDataJson.length < 200000) {
             print('Found FB_PUBLIC_LOAD_DATA with length: ${formDataJson.length}');
             // Use the structured data for better extraction
-            formDataHtml = 'Google Forms Data: $formDataJson\n\nHTML Content: ${htmlContentToUse.substring(0, htmlContentToUse.length > 10000 ? 10000 : htmlContentToUse.length)}';
+            formDataHtml = 'Google Forms Data: $formDataJson\n\nHTML Content: ${htmlContentToUse.substring(0, htmlContentToUse.length > 20000 ? 20000 : htmlContentToUse.length)}';
           } else if (formDataJson != null) {
-            print('FB_PUBLIC_LOAD_DATA too large (${formDataJson.length} chars), using HTML only');
+            print('FB_PUBLIC_LOAD_DATA extremely large (${formDataJson.length} chars), using first 100k');
+            formDataHtml = 'Google Forms Data: ${formDataJson.substring(0, 100000)}\n\nHTML Content: ${htmlContentToUse.substring(0, 10000)}';
           }
         } catch (e) {
           print('Error parsing Google Forms data: $e');
@@ -904,9 +914,9 @@ class UrlFormService {
         print('Could not find FB_PUBLIC_LOAD_DATA in HTML');
       }
       
-      // Increase content limit for better extraction (up to 20000 characters for Google Forms)
+      // Increase content limit for better extraction (up to 100,000 characters for Google Forms)
       // Reuse the isGoogleFormUrl and isGoogleFormHtml variables declared above
-      final maxLength = (isGoogleFormUrl || isGoogleFormHtml) ? 20000 : 15000;
+      final maxLength = (isGoogleFormUrl || isGoogleFormHtml) ? 100000 : 30000;
       final limitedHtml = formDataHtml.length > maxLength 
           ? formDataHtml.substring(0, maxLength) + '...'
           : formDataHtml;
@@ -995,6 +1005,7 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
       
       http.Response geminiResponse;
       try {
+        _log('Sending prompt to Gemini...');
         geminiResponse = await http.post(
           Uri.parse(geminiUrl),
           headers: {'Content-Type': 'application/json'},
@@ -1008,14 +1019,26 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
             ],
           }),
         ).timeout(
-          const Duration(seconds: 60),
+          const Duration(seconds: 45), // Reduced timeout slightly to allow for fallback
           onTimeout: () {
             throw Exception('Gemini API request timeout');
           },
         );
       } catch (e) {
-        _log('ERROR: Failed to call Gemini API: $e', LogType.error);
-        _log('Will use default structure', LogType.warning);
+        _log('Gemini API failed or timed out: $e', LogType.warning);
+        _log('Attempting fallback with NVIDIA NIM...', LogType.info);
+        
+        try {
+          final nvidiaResult = await _tryExtractWithNvidia(prompt, url);
+          if (nvidiaResult != null) {
+            _log('✓ Successfully extracted form using NVIDIA NIM fallback', LogType.success);
+            return nvidiaResult;
+          }
+        } catch (nvidiaError) {
+          _log('ERROR: NVIDIA NIM fallback also failed: $nvidiaError', LogType.error);
+        }
+        
+        _log('All AI methods failed, using default structure', LogType.warning);
         final defaultStructure = _getDefaultFormStructure(url);
         if (extractedTitle != null && extractedTitle != 'Web Form') {
           defaultStructure['title'] = extractedTitle;
@@ -1159,14 +1182,16 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
         }
       } else {
         _log('ERROR: Gemini API returned non-200 status: ${geminiResponse.statusCode}', LogType.error);
-        _log('Response body (first 1000 chars): ${geminiResponse.body.substring(0, geminiResponse.body.length > 1000 ? 1000 : geminiResponse.body.length)}', LogType.error);
+        _log('Attempting fallback with NVIDIA NIM...', LogType.info);
+        
         try {
-          final errorData = jsonDecode(geminiResponse.body);
-          if (errorData.containsKey('error')) {
-            _log('API Error: ${errorData['error']}', LogType.error);
+          final nvidiaResult = await _tryExtractWithNvidia(prompt, url);
+          if (nvidiaResult != null) {
+            _log('✓ Successfully extracted form using NVIDIA NIM fallback', LogType.success);
+            return nvidiaResult;
           }
-        } catch (e) {
-          // Ignore JSON parse errors for error response
+        } catch (nvidiaError) {
+          _log('ERROR: NVIDIA NIM fallback also failed: $nvidiaError', LogType.error);
         }
       }
       
@@ -1189,6 +1214,89 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
       }
       return defaultStructure;
     }
+  }
+
+  Future<Map<String, dynamic>?> _tryExtractWithNvidia(String prompt, String url) async {
+    try {
+      final apiKey = AppConfig.nvidiaApiKey;
+      final baseUrl = AppConfig.nvidiaBaseUrl;
+      final model = AppConfig.nvidiaModel;
+      
+      if (apiKey.isEmpty || apiKey.contains('YOUR_NVIDIA_API_KEY')) {
+        _log('NVIDIA API key not configured, skipping fallback');
+        return null;
+      }
+      
+      _log('Calling NVIDIA NIM API (Model: $model)...');
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: jsonEncode({
+          'model': model,
+          'messages': [
+            {
+              'role': 'system',
+              'content': 'You are a form extraction assistant. Extract form fields and return ONLY valid JSON.'
+            },
+            {
+              'role': 'user',
+              'content': prompt
+            }
+          ],
+          'temperature': 0.1,
+          'max_tokens': 4096,
+        }),
+      ).timeout(const Duration(seconds: 40));
+      
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        final extractedText = responseData['choices'][0]['message']['content'] as String;
+        
+        // Use a more robust JSON extraction helper
+        return _parseJsonResponse(extractedText);
+      } else {
+        _log('NVIDIA API returned error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      _log('Error in NVIDIA NIM extraction: $e');
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? _parseJsonResponse(String text) {
+    try {
+      String jsonText = text.trim();
+      
+      // Remove markdown code blocks
+      if (jsonText.contains('```')) {
+        final match = RegExp(r'```(?:json)?\s*(.*?)\s*```', dotAll: true).firstMatch(jsonText);
+        if (match != null) {
+          jsonText = match.group(1) ?? jsonText;
+        }
+      }
+      
+      // Find the first { and last }
+      final start = jsonText.indexOf('{');
+      final end = jsonText.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        jsonText = jsonText.substring(start, end + 1);
+      }
+      
+      final data = jsonDecode(jsonText) as Map<String, dynamic>;
+      
+      // Basic validation
+      if (data.containsKey('fields') && data['fields'] is List) {
+        return data;
+      }
+    } catch (e) {
+      _log('Failed to parse JSON from AI response: $e');
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>?> _tryExtractWithGeminiUrlOnly(String url, String geminiUrl, String geminiApiKey) async {
@@ -1276,7 +1384,7 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
             }
           ],
         }),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 45));
 
       if (geminiResponse.statusCode == 200) {
         final responseData = jsonDecode(geminiResponse.body);
@@ -1337,16 +1445,17 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
     // Pattern 1: Look for description in common HTML structures
     // Google Forms often has instructions in specific divs or spans
     final descriptionPatterns = [
-      // Look for text in divs with specific classes
+      // Pattern for modern Google Forms description (F9U9id class)
+      RegExp(r'<div[^>]*class="[^"]*F9U9id[^"]*"[^>]*>(.*?)</div>', dotAll: true, caseSensitive: false),
+      // Look for description in specific Google Forms structure
+      RegExp(r'<div[^>]*role="heading"[^>]*>.*?</div>\s*<div[^>]*>(.*?)</div>', dotAll: true, caseSensitive: false),
+      // Look for text in divs with common description classes
+      RegExp(r'<div[^>]*class="[^"]*(?:description|instructions|help-text|helpText)[^"]*"[^>]*>(.*?)</div>', dotAll: true, caseSensitive: false),
+      // Original patterns
       RegExp(r'<div[^>]*class="[^"]*freebirdFormviewerViewItemsItemItemHelpText[^"]*"[^>]*>(.*?)</div>', dotAll: true, caseSensitive: false),
-      // Look for paragraphs with instructions
       RegExp(r'<p[^>]*class="[^"]*freebirdFormviewerViewItemsItemItemHelpText[^"]*"[^>]*>(.*?)</p>', dotAll: true, caseSensitive: false),
-      // Look for description in data attributes
       RegExp(r'data-description="([^"]+)"', dotAll: true, caseSensitive: false),
-      // Look for meta description
       RegExp(r'<meta[^>]*name="description"[^>]*content="([^"]+)"', dotAll: true, caseSensitive: false),
-      // Look for text that mentions "recorded when you upload" or similar instructions
-      RegExp(r'<div[^>]*>([^<]*(?:recorded|upload|submit|associated with your)[^<]*)</div>', dotAll: true, caseSensitive: false),
     ];
     
     for (var pattern in descriptionPatterns) {
@@ -1564,13 +1673,11 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
           print('Extracted title from formInfo[1]: "$extractedFormTitle"');
           if (extractedFormTitle.isNotEmpty && 
               extractedFormTitle != 'null' && 
-              extractedFormTitle.length > 3 &&
-              extractedFormTitle.length < 200 && // Reasonable title length
+              extractedFormTitle.length > 2 &&
+              extractedFormTitle.length < 300 && 
               extractedFormTitle.toLowerCase() != 'untitled form' &&
-              !extractedFormTitle.toLowerCase().contains('google') &&
               !extractedFormTitle.startsWith('http') &&
-              !extractedFormTitle.startsWith('[') && // Not an array
-              !extractedFormTitle.contains('null,')) { // Not a serialized array
+              !extractedFormTitle.startsWith('[')) { 
             formTitle = extractedFormTitle;
             // Clean up common suffixes
             formTitle = formTitle.replaceAll(RegExp(r'\s*-\s*Google Forms.*$', caseSensitive: false), '');
@@ -1591,14 +1698,12 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
               final candidate = (formInfo[i] as String).trim();
               if (candidate.isNotEmpty && 
                   candidate != 'null' && 
-                  candidate.length > 3 &&
-                  candidate.length < 200 &&
+                  candidate.length > 2 &&
+                  candidate.length < 300 &&
                   candidate.toLowerCase() != 'untitled form' &&
-                  !candidate.toLowerCase().contains('google') &&
                   !candidate.startsWith('http') &&
                   !candidate.contains('@') &&
-                  !candidate.startsWith('[') && // Not an array
-                  !candidate.contains('null,')) { // Not a serialized array
+                  !candidate.startsWith('[')) { 
                 formTitle = candidate;
                 print('Found form title in formInfo[$i]: "$formTitle"');
                 break;
@@ -1607,35 +1712,29 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
           }
         }
         
-        // Extract description - try index 2 first (most common)
-        if (formInfo.length > 2 && formInfo[2] != null && formInfo[2] is String) {
-          final candidate = (formInfo[2] as String).trim();
-          if (candidate.isNotEmpty && candidate.length > 5) {
-            description = candidate;
-            print('Extracted description from formInfo[2]: "${description.substring(0, description.length > 100 ? 100 : description.length)}..."');
-          }
-        }
-        
-        // Extract description - try multiple indices (3, 4, etc.)
-        if (description == null || description.isEmpty) {
-          for (int i = 2; i < formInfo.length && i < 10; i++) {
-            if (formInfo[i] != null && formInfo[i] is String) {
-              final candidate = (formInfo[i] as String).trim();
-              // Check if it looks like a description (not a title, not too short, not metadata)
-              if (candidate.isNotEmpty && 
-                  candidate.length > 10 && // Descriptions are usually longer
-                  candidate.length < 1000 && // Reasonable length
-                  !candidate.startsWith('http') &&
-                  !candidate.contains('@') &&
-                  !candidate.toLowerCase().contains('untitled') &&
-                  !candidate.startsWith('[') &&
-                  !candidate.contains('null,')) {
-                description = candidate;
-                print('Extracted description from formInfo[$i]: "${description.substring(0, description.length > 100 ? 100 : description.length)}..."');
-                break;
+        // Extract description - aggregate multiple strings from formInfo indices
+        List<String> descriptionParts = [];
+        for (int i = 2; i < formInfo.length && i < 15; i++) {
+          if (formInfo[i] != null && formInfo[i] is String) {
+            final candidate = (formInfo[i] as String).trim();
+            if (candidate.isNotEmpty && 
+                candidate.length > 5 && 
+                candidate.length < 5000 &&
+                !candidate.startsWith('http') &&
+                !candidate.contains('@') &&
+                !candidate.toLowerCase().contains('untitled') &&
+                !candidate.startsWith('[')) {
+              // Avoid adding the title again if it's identical
+              if (candidate != formTitle) {
+                descriptionParts.add(candidate);
+                print('Added to description parts from formInfo[$i]: "${candidate.substring(0, candidate.length > 100 ? 100 : candidate.length)}..."');
               }
             }
           }
+        }
+        
+        if (descriptionParts.isNotEmpty) {
+          description = descriptionParts.join('\n\n');
         }
         
         // Also try to find description in nested structures
@@ -2004,6 +2103,7 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
       // Google Forms question structure: [questionId, questionText, null, type, [options structure], ...]
       // Common structure: [id, text, null, 3, [[...options...]], ...]
       String? questionText;
+      String? itemDescription;
       dynamic questionType;
       bool isRequired = false;
       List<String>? options;
@@ -2013,20 +2113,26 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
         final item1 = questionData[1];
         if (item1 is String) {
           final trimmed = item1.trim();
-          if (trimmed.isNotEmpty && trimmed != 'null' && trimmed.length >= 1 && trimmed.length <= 200) {
+          if (trimmed.isNotEmpty && trimmed != 'null' && trimmed.length >= 1 && trimmed.length <= 500) {
             questionText = trimmed;
             print('    Found question text at index 1: "$questionText"');
+            
+            // Extract item description/help text from index 2
+            if (questionData.length > 2 && questionData[2] != null && questionData[2] is String) {
+              final candidate = (questionData[2] as String).trim();
+              if (candidate.isNotEmpty && candidate != 'null' && candidate.length > 2) {
+                itemDescription = candidate;
+                print('    Found field help text at index 2: "${itemDescription!.substring(0, itemDescription!.length > 50 ? 50 : itemDescription!.length)}..."');
+              }
+            }
             
             // Type is typically at index 3 (after questionText and null)
             if (questionData.length > 3) {
               questionType = questionData[3];
-              print('    Found question type at index 3: $questionType (type: ${questionType.runtimeType})');
+              print('    Found question type at index 3: $questionType');
             }
             
             // Options are typically at index 4 (after type)
-            // But only for fields that should have options (dropdown, radio, checkbox)
-            // For text/textarea/date/file fields, index 4 contains metadata, not options
-            // Only extract options if we know the type supports options
             if (questionData.length > 4 && questionType != null) {
               final typeValue = questionType is num ? questionType.toInt() : null;
               // Only extract options for fields that should have them:
@@ -2308,6 +2414,13 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
                 options = List.generate(5, (i) => '${i + 1}');
               }
               break;
+            case 6: // Title and Description item
+              fieldType = 'static';
+              break;
+            case 7: // Section Header / Page Break
+            case 8: // Page Break
+              fieldType = 'static';
+              break;
             case 9:
               fieldType = 'date';
               break;
@@ -2343,6 +2456,10 @@ Return ONLY valid JSON, no markdown formatting, no explanations, no code blocks.
         'required': isRequired,
         'order': order,
       };
+      
+      if (itemDescription != null) {
+        question['description'] = itemDescription;
+      }
       
       if (options != null && options.isNotEmpty) {
         question['options'] = options;

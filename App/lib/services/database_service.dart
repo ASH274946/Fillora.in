@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/form_model.dart';
+import 'security_service.dart';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -10,6 +11,7 @@ class DatabaseService {
   DatabaseService._internal();
 
   static Database? _database;
+  final SecurityService _security = SecurityService();
 
   Future<Database?> get database async {
     if (kIsWeb) {
@@ -145,7 +147,18 @@ class DatabaseService {
         }
         return form.id;
       }
-      await db.insert('forms', form.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      
+      // SECURITY: Encrypt sensitive data before saving
+      final formMap = form.toMap();
+      if (formMap['formData'] != null) {
+        formMap['formData'] = await _security.encryptData(formMap['formData'] as String);
+      }
+      if (formMap['description'] != null) {
+        formMap['description'] = await _security.encryptData(formMap['description'] as String);
+      }
+      
+      await db.insert('forms', formMap, conflictAlgorithm: ConflictAlgorithm.replace);
       return form.id;
     } catch (e) {
       print('Error inserting form: $e');
@@ -171,7 +184,20 @@ class DatabaseService {
       final db = await database;
       if (db == null) return [];
       final List<Map<String, dynamic>> maps = await db.query('forms', orderBy: 'createdAt DESC');
-      return List.generate(maps.length, (i) => FormModel.fromMap(maps[i]));
+      
+      // SECURITY: Decrypt sensitive data after loading
+      final decryptedList = <FormModel>[];
+      for (final map in maps) {
+        final mutableMap = Map<String, dynamic>.from(map);
+        if (mutableMap['formData'] != null) {
+          mutableMap['formData'] = await _security.decryptData(mutableMap['formData'] as String);
+        }
+        if (mutableMap['description'] != null) {
+          mutableMap['description'] = await _security.decryptData(mutableMap['description'] as String);
+        }
+        decryptedList.add(FormModel.fromMap(mutableMap));
+      }
+      return decryptedList;
     } catch (e) {
       print('Error getting forms: $e');
       return [];
@@ -194,7 +220,17 @@ class DatabaseService {
       whereArgs: [id],
     );
     if (maps.isEmpty) return null;
-    return FormModel.fromMap(maps.first);
+    
+    // SECURITY: Decrypt sensitive data after loading
+    final mutableMap = Map<String, dynamic>.from(maps.first);
+    if (mutableMap['formData'] != null) {
+      mutableMap['formData'] = await _security.decryptData(mutableMap['formData'] as String);
+    }
+    if (mutableMap['description'] != null) {
+      mutableMap['description'] = await _security.decryptData(mutableMap['description'] as String);
+    }
+    
+    return FormModel.fromMap(mutableMap);
   }
 
   Future<int> updateForm(FormModel form) async {
@@ -208,9 +244,19 @@ class DatabaseService {
     }
     final db = await database;
     if (db == null) return 0;
+    
+    // SECURITY: Encrypt sensitive data before updating
+    final formMap = form.copyWith(updatedAt: DateTime.now()).toMap();
+    if (formMap['formData'] != null) {
+      formMap['formData'] = await _security.encryptData(formMap['formData'] as String);
+    }
+    if (formMap['description'] != null) {
+      formMap['description'] = await _security.encryptData(formMap['description'] as String);
+    }
+    
     return await db.update(
       'forms',
-      form.copyWith(updatedAt: DateTime.now()).toMap(),
+      formMap,
       where: 'id = ?',
       whereArgs: [form.id],
     );
@@ -259,7 +305,17 @@ class DatabaseService {
     try {
       final db = await database;
       if (db == null) return template['id'] as String;
-      await db.insert('templates', template, conflictAlgorithm: ConflictAlgorithm.replace);
+      
+      // SECURITY: Encrypt sensitive data before saving
+      final templateMap = Map<String, dynamic>.from(template);
+      if (templateMap['formStructure'] != null) {
+        templateMap['formStructure'] = await _security.encryptData(templateMap['formStructure'] as String);
+      }
+      if (templateMap['description'] != null) {
+        templateMap['description'] = await _security.encryptData(templateMap['description'] as String);
+      }
+      
+      await db.insert('templates', templateMap, conflictAlgorithm: ConflictAlgorithm.replace);
       return template['id'] as String;
     } catch (e) {
       print('Error inserting template: $e');
@@ -277,7 +333,21 @@ class DatabaseService {
     try {
       final db = await database;
       if (db == null) return [];
-      return await db.query('templates', orderBy: 'usageCount DESC');
+      final List<Map<String, dynamic>> maps = await db.query('templates', orderBy: 'usageCount DESC');
+      
+      // SECURITY: Decrypt sensitive data after loading
+      final decryptedList = <Map<String, dynamic>>[];
+      for (final map in maps) {
+        final mutableMap = Map<String, dynamic>.from(map);
+        if (mutableMap['formStructure'] != null) {
+          mutableMap['formStructure'] = await _security.decryptData(mutableMap['formStructure'] as String);
+        }
+        if (mutableMap['description'] != null) {
+          mutableMap['description'] = await _security.decryptData(mutableMap['description'] as String);
+        }
+        decryptedList.add(mutableMap);
+      }
+      return decryptedList;
     } catch (e) {
       print('Error getting templates: $e');
       return [];
