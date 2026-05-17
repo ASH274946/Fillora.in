@@ -173,6 +173,7 @@ class AuthService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('user_data');
       await prefs.remove('auth_provider');
+      await prefs.setBool('is_signed_in', false);
       
       // Clear secure storage
       await _secureStorage.deleteAll();
@@ -242,6 +243,9 @@ class AuthService {
       // Save non-sensitive user data as JSON
       final userDataJson = json.encode(safeUserData);
       await prefs.setString('user_data', userDataJson);
+      
+      // Mark as authenticated
+      await prefs.setBool('is_signed_in', true);
       
       // Save member since date if not already set
       if (!prefs.containsKey('member_since')) {

@@ -203,7 +203,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.person_outline,
                     title: 'Profile',
                     onTap: () async {
-                      await context.push('/profile');
+                      await context.push('/settings/profile');
                       // Reload profile data after returning from profile screen
                       _loadProfileData();
                     },
@@ -212,14 +212,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.lock_outline,
                     title: 'Security',
                     onTap: () {
-                      context.push('/security');
+                      context.push('/settings/security');
                     },
                   ),
                   _SettingsItem(
                     icon: Icons.notifications_outlined,
                     title: 'Notifications',
                     onTap: () {
-                      context.push('/notifications');
+                      context.push('/settings/notifications');
                     },
                   ),
                 ],

@@ -49,6 +49,22 @@ class _SecurityScreenState extends State<SecurityScreen> {
     });
   }
 
+  void _showSecurityDisabledDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Security Settings'),
+        content: const Text('Security settings are currently disabled.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _saveSecuritySetting(String key, dynamic value) async {
     final prefs = await SharedPreferences.getInstance();
     if (value is bool) {
@@ -182,43 +198,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                     subtitle: 'Protect your app with a PIN or pattern',
                     trailing: _buildSwitch(
                       value: _appLockEnabled,
-                      onChanged: (value) async {
-                        if (value) {
-                          // Navigate to setup PIN screen
-                          context.go('/app-lock-setup');
-                        } else {
-                          // Confirm disable
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Disable App Lock?'),
-                              content: const Text('This will also disable biometric authentication.'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(context).pop(false),
-                                  child: const Text('Cancel'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.of(context).pop(true),
-                                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                                  child: const Text('Disable'),
-                                ),
-                              ],
-                            ),
-                          );
-
-                          if (confirm == true) {
-                            await _appLockService.setAppLockEnabled(false);
-                            await _appLockService.setBiometricEnabled(false);
-                            setState(() {
-                              _appLockEnabled = false;
-                              _biometricEnabled = false;
-                            });
-                            _saveSecuritySetting('app_lock_enabled', false);
-                            _saveSecuritySetting('biometric_enabled', false);
-                          }
-                        }
-                      },
+                      onChanged: (value) => _showSecurityDisabledDialog(),
                     ),
                   ),
                   _SecurityItem(
@@ -229,42 +209,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                         : 'Biometric authentication not available on this device',
                     trailing: _buildSwitch(
                       value: _biometricEnabled,
-                      onChanged: (value) async {
-                        if (value && !_appLockEnabled) {
-                          AppSnackBar.show(context, 'Please enable App Lock first', isError: true);
-                          return;
-                        }
-
-                        if (value && !_biometricAvailable) {
-                          AppSnackBar.show(context, 'Biometric authentication is not available', isError: true);
-                          return;
-                        }
-
-                        // Test biometric authentication when enabling
-                        if (value) {
-                          try {
-                            final authenticated = await _biometricService.authenticate(
-                              reason: 'Enable biometric authentication',
-                            );
-                            
-                            if (!authenticated) {
-                              AppSnackBar.show(context, 'Biometric authentication failed', isError: true);
-                              return;
-                            }
-                          } catch (e) {
-                            AppSnackBar.show(context, 'Error: ${e.toString()}', isError: true);
-                            return;
-                          }
-                        }
-
-                        await _appLockService.setBiometricEnabled(value);
-                        setState(() {
-                          _biometricEnabled = value;
-                        });
-                        _saveSecuritySetting('biometric_enabled', value);
-                        
-                        AppSnackBar.show(context, value ? 'Biometric enabled' : 'Biometric disabled');
-                      },
+                      onChanged: (value) => _showSecurityDisabledDialog(),
                     ),
                     enabled: _appLockEnabled && _biometricAvailable,
                   ),
@@ -280,7 +225,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                     icon: Icons.lock_reset,
                     title: 'Change Password',
                     subtitle: 'Update your account password',
-                    onTap: _showChangePasswordDialog,
+                    onTap: () => _showSecurityDisabledDialog(),
                   ),
                   _SecurityItem(
                     icon: Icons.verified_user_outlined,
@@ -288,16 +233,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                     subtitle: 'Add an extra layer of security (Coming soon)',
                     trailing: _buildSwitch(
                       value: _twoFactorEnabled,
-                      onChanged: (value) {
-                        if (value) {
-                          AppSnackBar.show(context, 'Two-factor authentication is coming soon!');
-                        } else {
-                          setState(() {
-                            _twoFactorEnabled = false;
-                          });
-                          _saveSecuritySetting('two_factor_enabled', false);
-                        }
-                      },
+                      onChanged: (value) => _showSecurityDisabledDialog(),
                     ),
                   ),
                 ],
@@ -318,44 +254,20 @@ class _SecurityScreenState extends State<SecurityScreen> {
                         : 'Automatically log out after inactivity',
                     trailing: _buildSwitch(
                       value: _sessionTimeoutEnabled,
-                      onChanged: (value) {
-                        setState(() {
-                          _sessionTimeoutEnabled = value;
-                        });
-                        _saveSecuritySetting('session_timeout_enabled', value);
-                        if (value) {
-                          _showSessionTimeoutDialog();
-                        }
-                      },
+                      onChanged: (value) => _showSecurityDisabledDialog(),
                     ),
                   ),
                   _SecurityItem(
                     icon: Icons.devices_outlined,
                     title: 'Active Sessions',
                     subtitle: 'Manage devices where you are logged in',
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Active Sessions'),
-                          content: const Text(
-                            'Current Device:\n• This Device (Active)\n\nOther Devices:\n• iPhone 13 Pro (Last active: 2 hours ago)\n• Chrome on Windows (Last active: 1 day ago)',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text('Close'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                    onTap: () => _showSecurityDisabledDialog(),
                   ),
                   _SecurityItem(
                     icon: Icons.logout,
                     title: 'Logout from Other Devices',
                     subtitle: 'Sign out from all other devices',
-                    onTap: _showLogoutOtherDevicesDialog,
+                    onTap: () => _showSecurityDisabledDialog(),
                   ),
                 ],
               ),
@@ -369,34 +281,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
                     icon: Icons.delete_outline,
                     title: 'Clear App Data',
                     subtitle: 'Remove all locally stored data',
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Clear App Data'),
-                          content: const Text(
-                            'This will remove all locally stored data including cached forms and preferences. This action cannot be undone.',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text('Cancel'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.of(context).pop();
-                                AppSnackBar.show(context, 'App data cleared successfully');
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                              ),
-                              child: const Text('Clear Data'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                    onTap: () => _showSecurityDisabledDialog(),
                   ),
                 ],
               ),

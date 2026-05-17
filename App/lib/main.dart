@@ -528,6 +528,7 @@ class _FilloraAppState extends State<FilloraApp> with WidgetsBindingObserver {
           '/history',
           '/settings/profile',
           '/settings/security',
+          '/settings/notifications',
           '/conversational-form',
           '/review',
           '/document-upload',

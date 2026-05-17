@@ -11,14 +11,14 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  bool _pushNotificationsEnabled = true;
-  bool _emailNotificationsEnabled = true;
-  bool _formRemindersEnabled = true;
-  bool _submissionConfirmationsEnabled = true;
+  bool _pushNotificationsEnabled = false;
+  bool _emailNotificationsEnabled = false;
+  bool _formRemindersEnabled = false;
+  bool _submissionConfirmationsEnabled = false;
   bool _weeklySummaryEnabled = false;
   bool _promotionalNotificationsEnabled = false;
-  bool _soundEnabled = true;
-  bool _vibrationEnabled = true;
+  bool _soundEnabled = false;
+  bool _vibrationEnabled = false;
   bool _isLoading = false;
 
   @override
@@ -32,14 +32,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       setState(() {
-        _pushNotificationsEnabled = prefs.getBool('push_notifications_enabled') ?? true;
-        _emailNotificationsEnabled = prefs.getBool('email_notifications_enabled') ?? true;
-        _formRemindersEnabled = prefs.getBool('form_reminders_enabled') ?? true;
-        _submissionConfirmationsEnabled = prefs.getBool('submission_confirmations_enabled') ?? true;
+        _pushNotificationsEnabled = prefs.getBool('push_notifications_enabled') ?? false;
+        _emailNotificationsEnabled = prefs.getBool('email_notifications_enabled') ?? false;
+        _formRemindersEnabled = prefs.getBool('form_reminders_enabled') ?? false;
+        _submissionConfirmationsEnabled = prefs.getBool('submission_confirmations_enabled') ?? false;
         _weeklySummaryEnabled = prefs.getBool('weekly_summary_enabled') ?? false;
         _promotionalNotificationsEnabled = prefs.getBool('promotional_notifications_enabled') ?? false;
-        _soundEnabled = prefs.getBool('notification_sound_enabled') ?? true;
-        _vibrationEnabled = prefs.getBool('notification_vibration_enabled') ?? true;
+        _soundEnabled = prefs.getBool('notification_sound_enabled') ?? false;
+        _vibrationEnabled = prefs.getBool('notification_vibration_enabled') ?? false;
       });
     } catch (e) {
       print('Error loading notification settings: $e');
@@ -51,6 +51,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _saveNotificationSetting(String key, bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(key, value);
+  }
+
+  void _showNotificationDisabledDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Notifications Disabled'),
+        content: const Text('Notifications are currently disabled.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildSwitch({
@@ -128,12 +144,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       subtitle: 'Receive notifications on your device',
                       trailing: _buildSwitch(
                         value: _pushNotificationsEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _pushNotificationsEnabled = value;
-                          });
-                          _saveNotificationSetting('push_notifications_enabled', value);
-                        },
+                        onChanged: (value) => _showNotificationDisabledDialog(),
                       ),
                     ),
                     _NotificationItem(
@@ -142,12 +153,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       subtitle: 'Receive notifications via email',
                       trailing: _buildSwitch(
                         value: _emailNotificationsEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _emailNotificationsEnabled = value;
-                          });
-                          _saveNotificationSetting('email_notifications_enabled', value);
-                        },
+                        onChanged: (value) => _showNotificationDisabledDialog(),
                       ),
                     ),
                   ],
@@ -164,12 +170,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       subtitle: 'Get reminded about incomplete forms',
                       trailing: _buildSwitch(
                         value: _formRemindersEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _formRemindersEnabled = value;
-                          });
-                          _saveNotificationSetting('form_reminders_enabled', value);
-                        },
+                        onChanged: (value) => _showNotificationDisabledDialog(),
                       ),
                       enabled: _pushNotificationsEnabled || _emailNotificationsEnabled,
                     ),
@@ -179,12 +180,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       subtitle: 'Get notified when forms are submitted',
                       trailing: _buildSwitch(
                         value: _submissionConfirmationsEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _submissionConfirmationsEnabled = value;
-                          });
-                          _saveNotificationSetting('submission_confirmations_enabled', value);
-                        },
+                        onChanged: (value) => _showNotificationDisabledDialog(),
                       ),
                       enabled: _pushNotificationsEnabled || _emailNotificationsEnabled,
                     ),
@@ -202,12 +198,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       subtitle: 'Receive a weekly summary of your activity',
                       trailing: _buildSwitch(
                         value: _weeklySummaryEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _weeklySummaryEnabled = value;
-                          });
-                          _saveNotificationSetting('weekly_summary_enabled', value);
-                        },
+                        onChanged: (value) => _showNotificationDisabledDialog(),
                       ),
                       enabled: _emailNotificationsEnabled,
                     ),
@@ -225,12 +216,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       subtitle: 'Receive updates about new features and offers',
                       trailing: _buildSwitch(
                         value: _promotionalNotificationsEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _promotionalNotificationsEnabled = value;
-                          });
-                          _saveNotificationSetting('promotional_notifications_enabled', value);
-                        },
+                        onChanged: (value) => _showNotificationDisabledDialog(),
                       ),
                       enabled: _pushNotificationsEnabled || _emailNotificationsEnabled,
                     ),
@@ -248,12 +234,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       subtitle: 'Play sound for notifications',
                       trailing: _buildSwitch(
                         value: _soundEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _soundEnabled = value;
-                          });
-                          _saveNotificationSetting('notification_sound_enabled', value);
-                        },
+                        onChanged: (value) => _showNotificationDisabledDialog(),
                       ),
                       enabled: _pushNotificationsEnabled,
                     ),
@@ -263,12 +244,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       subtitle: 'Vibrate for notifications',
                       trailing: _buildSwitch(
                         value: _vibrationEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _vibrationEnabled = value;
-                          });
-                          _saveNotificationSetting('notification_vibration_enabled', value);
-                        },
+                        onChanged: (value) => _showNotificationDisabledDialog(),
                       ),
                       enabled: _pushNotificationsEnabled,
                     ),

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/auth_service.dart';
 import '../services/analytics_service.dart';
 import '../widgets/app_snackbar.dart';
@@ -22,9 +24,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _addressController = TextEditingController();
   final _nationalityController = TextEditingController();
   final _occupationController = TextEditingController();
+  final _aadhaarController = TextEditingController();
+  final _panController = TextEditingController();
+  final _voterIdController = TextEditingController();
+  final _drivingLicenseController = TextEditingController();
+  final _passportController = TextEditingController();
+  final _uanController = TextEditingController();
+  final _gstController = TextEditingController();
+  final _aparIdController = TextEditingController();
   final _authService = AuthService();
   final _analyticsService = AnalyticsService();
-  
+
   String? _photoUrl;
   String? _provider;
   String? _memberSince;
@@ -34,6 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   DateTime? _dateOfBirth;
   String? _gender;
   List<Map<String, String>> _emergencyContacts = [];
+  List<Map<String, String>> _attachments = [];
 
   @override
   void initState() {
@@ -50,17 +61,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _addressController.dispose();
     _nationalityController.dispose();
     _occupationController.dispose();
+    _aadhaarController.dispose();
+    _panController.dispose();
+    _voterIdController.dispose();
+    _drivingLicenseController.dispose();
+    _passportController.dispose();
+    _uanController.dispose();
+    _gstController.dispose();
+    _aparIdController.dispose();
     super.dispose();
   }
 
   Future<void> _loadProfileData() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final userData = await _authService.getCurrentUser();
       final stats = await _analyticsService.getDashboardStats();
       final prefs = await SharedPreferences.getInstance();
-      
+
       setState(() {
         if (userData != null) {
           _nameController.text = userData['name'] ?? '';
@@ -70,11 +89,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _addressController.text = userData['address'] ?? '';
           _nationalityController.text = userData['nationality'] ?? '';
           _occupationController.text = userData['occupation'] ?? '';
+          _aadhaarController.text = userData['aadhaar'] ?? '';
+          _panController.text = userData['pan'] ?? '';
+          _voterIdController.text = userData['voterId'] ?? '';
+          _drivingLicenseController.text = userData['drivingLicense'] ?? '';
+          _passportController.text = userData['passport'] ?? '';
+          _uanController.text = userData['uan'] ?? '';
+          _gstController.text = userData['gst'] ?? '';
+          _aparIdController.text = userData['aparId'] ?? '';
           _photoUrl = userData['photoUrl'];
           _provider = userData['provider'];
           _gender = userData['gender'];
-          
-          // Load date of birth
+
           if (userData['dateOfBirth'] != null) {
             try {
               _dateOfBirth = DateTime.parse(userData['dateOfBirth']);
@@ -82,8 +108,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _dateOfBirth = null;
             }
           }
-          
-          // Load emergency contacts - support both old format (single) and new format (list)
+
+          if (userData['attachments'] != null) {
+            try {
+              final attachments = userData['attachments'] as List;
+              _attachments = attachments.map((att) {
+                if (att is Map) {
+                  return {
+                    'name': att['name']?.toString() ?? '',
+                    'path': att['path']?.toString() ?? '',
+                  };
+                }
+                return {'name': '', 'path': ''};
+              }).toList();
+            } catch (e) {
+              _attachments = [];
+            }
+          }
+
           if (userData['emergencyContacts'] != null) {
             try {
               final contacts = userData['emergencyContacts'] as List;
@@ -100,7 +142,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _emergencyContacts = [];
             }
           } else if (userData['emergencyContactName'] != null || userData['emergencyContactPhone'] != null) {
-            // Migrate old single contact format to new list format
             final name = userData['emergencyContactName']?.toString() ?? '';
             final phone = userData['emergencyContactPhone']?.toString() ?? '';
             if (name.isNotEmpty || phone.isNotEmpty) {
@@ -110,9 +151,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             }
           }
         }
-        
+
         _formsCompleted = stats['completed'] ?? 0;
-        
+
         final memberSinceStr = prefs.getString('member_since');
         if (memberSinceStr != null) {
           final memberSince = DateTime.parse(memberSinceStr);
@@ -149,6 +190,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'address': _addressController.text.trim(),
         'nationality': _nationalityController.text.trim(),
         'occupation': _occupationController.text.trim(),
+        'aadhaar': _aadhaarController.text.replaceAll(' ', '').trim(),
+        'pan': _panController.text.trim(),
+        'voterId': _voterIdController.text.trim(),
+        'drivingLicense': _drivingLicenseController.text.trim(),
+        'passport': _passportController.text.trim(),
+        'uan': _uanController.text.trim(),
+        'gst': _gstController.text.trim(),
+        'aparId': _aparIdController.text.trim(),
+        'attachments': _attachments,
         'emergencyContacts': _emergencyContacts,
       });
 
@@ -165,6 +215,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() => _isSaving = false);
       }
     }
+  }
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
+
+    if (result != null && result.files.isNotEmpty) {
+      final file = result.files.first;
+      setState(() {
+        _attachments.add({
+          'name': file.name,
+          'path': file.path ?? '',
+        });
+      });
+    }
+  }
+
+  void _removeAttachment(int index) {
+    setState(() {
+      _attachments.removeAt(index);
+    });
   }
 
   String _getInitials(String name) {
@@ -194,8 +267,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _showAddEmergencyContactDialog({int? index}) async {
     String? initialName;
     String? initialPhone;
-    
-    // If editing, get initial values
+
     if (index != null && index < _emergencyContacts.length) {
       initialName = _emergencyContacts[index]['name'] ?? '';
       initialPhone = _emergencyContacts[index]['phone'] ?? '';
@@ -213,10 +285,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (result != null && mounted) {
       setState(() {
         if (index != null && index < _emergencyContacts.length) {
-          // Update existing contact
           _emergencyContacts[index] = result;
         } else {
-          // Add new contact
           _emergencyContacts.add(result);
         }
       });
@@ -240,7 +310,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
               child: Form(
                 key: _formKey,
                 child: Column(
@@ -303,7 +373,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    // Name Field
+
+                    // Personal Information Section
+                    Text(
+                      'Personal Information',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     TextFormField(
                       controller: _nameController,
                       decoration: const InputDecoration(
@@ -319,7 +398,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    // Nickname Field
                     TextFormField(
                       controller: _nicknameController,
                       decoration: const InputDecoration(
@@ -329,7 +407,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Email Field
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
@@ -347,10 +424,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         }
                         return null;
                       },
-                      readOnly: _provider != null, // Don't allow editing if signed in with OAuth
+                      readOnly: _provider != null,
                     ),
                     const SizedBox(height: 16),
-                    // Phone Field
                     TextFormField(
                       controller: _phoneController,
                       keyboardType: TextInputType.phone,
@@ -361,7 +437,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Date of Birth Field
                     InkWell(
                       onTap: _selectDateOfBirth,
                       child: InputDecorator(
@@ -384,7 +459,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Gender Field
                     DropdownButtonFormField<String>(
                       value: _gender,
                       decoration: const InputDecoration(
@@ -404,21 +478,180 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         });
                       },
                     ),
+                    const SizedBox(height: 32),
+
+                    // Identity Documents Section
+                    Text(
+                      'Identity Documents (Optional)',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
                     const SizedBox(height: 16),
-                    // Address Field
+                    TextFormField(
+                      controller: _aadhaarController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [_AadhaarInputFormatter()],
+                      decoration: const InputDecoration(
+                        labelText: 'Aadhaar Number',
+                        hintText: 'XXXX XXXX XXXX',
+                        prefixIcon: Icon(Icons.credit_card_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value != null && value.isNotEmpty) {
+                          final digits = value.replaceAll(' ', '');
+                          if (digits.length != 12) {
+                            return 'Aadhaar must be 12 digits';
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _aparIdController,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [_AlphaNumericUpperCaseFormatter()],
+                      decoration: const InputDecoration(
+                        labelText: 'APAR ID',
+                        hintText: 'e.g., APR202425001',
+                        prefixIcon: Icon(Icons.assignment_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _panController,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [_PanInputFormatter()],
+                      decoration: const InputDecoration(
+                        labelText: 'PAN Number',
+                        hintText: 'ABCDE1234F',
+                        prefixIcon: Icon(Icons.description_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value != null && value.isNotEmpty) {
+                          if (value.length != 10) {
+                            return 'PAN must be 10 characters';
+                          }
+                          if (!RegExp(r'^[A-Z]{5}[0-9]{4}[A-Z]$').hasMatch(value)) {
+                            return 'Invalid PAN format (e.g., ABCDE1234F)';
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _voterIdController,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [_AlphaNumericUpperCaseFormatter()],
+                      decoration: const InputDecoration(
+                        labelText: 'Voter ID (EPIC Number)',
+                        hintText: 'ABC1234567',
+                        prefixIcon: Icon(Icons.how_to_vote_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _drivingLicenseController,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [_AlphaNumericUpperCaseFormatter()],
+                      decoration: const InputDecoration(
+                        labelText: 'Driving License',
+                        hintText: 'HR-0619850034761',
+                        prefixIcon: Icon(Icons.drive_eta_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _passportController,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [_AlphaNumericUpperCaseFormatter()],
+                      decoration: const InputDecoration(
+                        labelText: 'Passport Number',
+                        hintText: 'A1234567',
+                        prefixIcon: Icon(Icons.card_travel_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value != null && value.isNotEmpty) {
+                          final cleaned = value.replaceAll(RegExp(r'[\s\-]'), '');
+                          if (cleaned.length != 8) {
+                            return 'Passport must be 8 characters';
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _uanController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(12)],
+                      decoration: const InputDecoration(
+                        labelText: 'UAN (EPFO)',
+                        hintText: '123456789012',
+                        prefixIcon: Icon(Icons.work_outline),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value != null && value.isNotEmpty) {
+                          if (value.length != 12) {
+                            return 'UAN must be 12 digits';
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _gstController,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [_GstInputFormatter()],
+                      decoration: const InputDecoration(
+                        labelText: 'GST Number',
+                        hintText: '22AAAAA0000A1Z5',
+                        prefixIcon: Icon(Icons.receipt_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value != null && value.isNotEmpty) {
+                          if (value.length != 15) {
+                            return 'GST must be 15 characters';
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Address & Occupation Section
+                    Text(
+                      'Address & Occupation',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     TextFormField(
                       controller: _addressController,
                       keyboardType: TextInputType.streetAddress,
-                      maxLines: 2,
+                      minLines: 1,
+                      maxLines: 5,
                       decoration: const InputDecoration(
                         labelText: 'Address (Optional)',
                         prefixIcon: Icon(Icons.home_outlined),
                         border: OutlineInputBorder(),
-                        alignLabelWithHint: true,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Nationality Field
                     TextFormField(
                       controller: _nationalityController,
                       decoration: const InputDecoration(
@@ -428,7 +661,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Occupation Field
                     TextFormField(
                       controller: _occupationController,
                       decoration: const InputDecoration(
@@ -437,7 +669,159 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         border: OutlineInputBorder(),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
+
+                    // Document Attachments Section
+                    Text(
+                      'Resume / Documents',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (_attachments.isEmpty)
+                      InkWell(
+                        onTap: _pickFile,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: theme.dividerColor,
+                              style: BorderStyle.solid,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.upload_file_outlined,
+                                  size: 32,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Upload Resume',
+                                      style: theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Tap to choose a file',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Only PDF files are accepted',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurface.withOpacity(0.4),
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right,
+                                color: theme.colorScheme.onSurface.withOpacity(0.3),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      Column(
+                        children: [
+                          ...List.generate(
+                            _attachments.length,
+                            (index) {
+                              final att = _attachments[index];
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: theme.dividerColor),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: const Icon(
+                                          Icons.picture_as_pdf_outlined,
+                                          size: 24,
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              att['name'] ?? '',
+                                              style: theme.textTheme.titleSmall?.copyWith(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Resume',
+                                              style: theme.textTheme.bodySmall?.copyWith(
+                                                color: theme.colorScheme.onSurface.withOpacity(0.5),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, size: 20),
+                                        onPressed: () => _removeAttachment(index),
+                                        tooltip: 'Remove',
+                                        style: IconButton.styleFrom(
+                                          foregroundColor: Colors.red,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _pickFile,
+                              icon: const Icon(Icons.add, size: 20),
+                              label: const Text('Add another file'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    const SizedBox(height: 32),
+
                     // Emergency Contact Section
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -457,7 +841,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    // Emergency Contacts List
                     if (_emergencyContacts.isEmpty)
                       InkWell(
                         onTap: () => _showAddEmergencyContactDialog(),
@@ -536,6 +919,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ],
                       ),
                     const SizedBox(height: 32),
+
                     // Stats Card
                     Card(
                       child: Padding(
@@ -583,6 +967,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
+
                     // Save Button
                     SizedBox(
                       width: double.infinity,
@@ -719,9 +1104,9 @@ class _EmergencyContactDialogState extends State<_EmergencyContactDialog> {
         FilledButton(
           onPressed: _handleSubmit,
           style: FilledButton.styleFrom(
-            backgroundColor: Color.lerp(Colors.black, Colors.white, 0.2), // 20% white, 80% black
+            backgroundColor: Color.lerp(Colors.black, Colors.white, 0.2),
             foregroundColor: Colors.white,
-            side: const BorderSide(color: Colors.white, width: 1), // White outline
+            side: const BorderSide(color: Colors.white, width: 1),
           ),
           child: Text(widget.isEditing ? 'Update' : 'Add'),
         ),
@@ -730,3 +1115,59 @@ class _EmergencyContactDialogState extends State<_EmergencyContactDialog> {
   }
 }
 
+class _AadhaarInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
+    final trimmed = digits.length > 12 ? digits.substring(0, 12) : digits;
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < trimmed.length; i++) {
+      if (i > 0 && i % 4 == 0) {
+        buffer.write(' ');
+      }
+      buffer.write(trimmed[i]);
+    }
+
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+class _PanInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final filtered = newValue.text.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+    final trimmed = filtered.length > 10 ? filtered.substring(0, 10) : filtered;
+    return TextEditingValue(
+      text: trimmed,
+      selection: TextSelection.collapsed(offset: trimmed.length),
+    );
+  }
+}
+
+class _AlphaNumericUpperCaseFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final filtered = newValue.text.replaceAll(RegExp(r'[^A-Za-z0-9\s\-]'), '').toUpperCase();
+    return TextEditingValue(
+      text: filtered,
+      selection: TextSelection.collapsed(offset: filtered.length),
+    );
+  }
+}
+
+class _GstInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final filtered = newValue.text.replaceAll(RegExp(r'[^A-Za-z0-9]'), '').toUpperCase();
+    final trimmed = filtered.length > 15 ? filtered.substring(0, 15) : filtered;
+    return TextEditingValue(
+      text: trimmed,
+      selection: TextSelection.collapsed(offset: trimmed.length),
+    );
+  }
+}
