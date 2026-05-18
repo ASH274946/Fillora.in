@@ -168,25 +168,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
             
             // Initialize form field controllers with existing data (including auto-filled)
             final dataToUse = formDataUpdated ? autofilledFormData : (form.formData ?? {});
-            if (dataToUse.isNotEmpty) {
-              for (var entry in dataToUse.entries) {
-                final fieldKey = entry.key;
-                final fieldValue = entry.value;
-                final fieldMeta = _fieldMetadata[fieldKey] as Map<String, dynamic>?;
-                final fieldType = fieldMeta?['type'] as String? ?? 'text';
-                
-                if (fieldType == 'static') continue; // Skip static fields for controller initialization
-                
-                final controller = _getFieldController(fieldKey);
-                if (fieldValue != null) {
-                  if (fieldType == 'checkbox' && fieldValue is List) {
-                    // Checkboxes are handled differently
-                  } else {
-                    controller.text = fieldValue.toString();
-                  }
-                }
-              }
-            }
+            _initializeFieldControllers(dataToUse);
             
             // Initialize with a welcome message
             if (_messages.isEmpty) {
@@ -259,6 +241,9 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
           _isAnalyzing = false;
           _parseFieldMetadata(form.description);
           _organizeFieldsByPage();
+          if (form.formData != null) {
+            _initializeFieldControllers(form.formData!);
+          }
           
           // Add a follow-up message
           _messages.add({
@@ -332,6 +317,9 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
           _isAnalyzing = false;
           _parseFieldMetadata(form.description);
           _organizeFieldsByPage();
+          if (form.formData != null) {
+            _initializeFieldControllers(form.formData!);
+          }
           
           _messages.add({
             'text': 'Form analysis complete! I\'ve found ${(form.formData?.length ?? 0)} fields. Let\'s start filling them out.',
@@ -506,6 +494,27 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
     print('Current page fields: ${_getCurrentPageFields().join(", ")}');
     print('=== End Field Organization Debug ===');
   }
+
+  void _initializeFieldControllers(Map<String, dynamic> formData) {
+    if (formData.isEmpty) return;
+    for (var entry in formData.entries) {
+      final fieldKey = entry.key;
+      final fieldValue = entry.value;
+      final fieldMeta = _fieldMetadata[fieldKey] as Map<String, dynamic>?;
+      final fieldType = fieldMeta?['type'] as String? ?? 'text';
+      
+      if (fieldType == 'static') continue; // Skip static fields for controller initialization
+      
+      final controller = _getFieldController(fieldKey);
+      if (fieldValue != null) {
+        if (fieldType == 'checkbox' && fieldValue is List) {
+          // Checkboxes are handled differently
+        } else {
+          controller.text = fieldValue.toString();
+        }
+      }
+    }
+  }
   
   List<String> _getCurrentPageFields() {
     return _fieldsByPage[_currentPage] ?? [];
@@ -606,7 +615,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
   }
   
   Future<void> _saveFormData() async {
-    if (_form == null || widget.formId == null) return;
+    if (_form == null) return;
     
     try {
       // Start with existing form data to preserve radio/checkbox/dropdown values
@@ -974,7 +983,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
     // Save form data first
     await _saveFormData();
     
-    if (_form == null || widget.formId == null) {
+    if (_form == null) {
       setState(() {
         _isSubmitting = false;
       });
@@ -1322,81 +1331,31 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
     }
   }
 
-  Future<bool> _onWillPop() async {
-    // Don't show dialog if form is being submitted
-    if (_isSubmitting) {
-      return false;
-    }
-    
-    // Check if form has unsaved changes
-    bool hasUnsavedChanges = false;
-    if (_form != null) {
-      // Check if any field values have changed
-      for (var entry in _fieldControllers.entries) {
-        final fieldKey = entry.key;
-        final currentValue = entry.value.text.trim();
-        final savedValue = _form!.formData?[fieldKey]?.toString().trim() ?? '';
-        if (currentValue != savedValue) {
-          hasUnsavedChanges = true;
-          break;
-        }
-      }
-    }
-    
-    if (hasUnsavedChanges) {
-      // Show dialog
-      final result = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('Exit Form?'),
-          content: const Text('You have unsaved changes. What would you like to do?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                // Save & Exit
-                await _saveFormData();
-                if (context.mounted) {
-                  Navigator.of(context).pop(true);
-                }
-              },
-              child: const Text('Save & Exit'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-              child: const Text('Exit without saving'),
-            ),
-          ],
-        ),
-      );
-      
-      if (result == true && mounted) {
-        // User chose to exit
-        if (context.canPop()) {
-          context.pop();
-        } else {
-          context.go('/dashboard');
-        }
-        return true;
-      }
-      return false; 
-    }
-    
-    // No unsaved changes, allow navigation
+  void _exitWithSavedDraftMessage() {
     if (mounted) {
+      AppSnackBar.show(
+        context,
+        "your ${_formTitle ?? 'form'} has been saved as a draft. you can access it in history",
+      );
       if (context.canPop()) {
         context.pop();
       } else {
         context.go('/dashboard');
       }
     }
+  }
+
+  Future<bool> _onWillPop() async {
+    // Don't show dialog if form is being submitted
+    if (_isSubmitting) {
+      return false;
+    }
+    
+    // Always auto-save form data upon exit
+    await _saveFormData();
+    
+    // Exit and show the draft saved message
+    _exitWithSavedDraftMessage();
     return true;
   }
 
@@ -1700,7 +1659,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                                   } else {
                                     // Submit form (this already has validation)
                                     AppLoggerService().logFormAction('Submitting form', 
-                                      formId: widget.formId,
+                                      formId: _form?.id,
                                       formTitle: _formTitle);
                                     _submitForm();
                                   }
@@ -2033,8 +1992,6 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
       fieldLabel = _translatedFieldLabels[fieldKey]!;
     }
 
-    final description = fieldMeta?['description'] as String?;
-    
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Column(
@@ -2047,15 +2004,18 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
               Expanded(
                 child: RichText(
                   text: TextSpan(
-                    style: theme.textTheme.titleSmall,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
                     children: [
                       TextSpan(text: fieldLabel),
                       if (isRequired)
-                        TextSpan(
+                        const TextSpan(
                           text: ' *',
                           style: TextStyle(
                             color: Colors.red,
-                            fontSize: (theme.textTheme.titleSmall?.fontSize ?? 14) * 1.2,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -2065,7 +2025,7 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10), // Structured gap between heading and field box
           // Field Widget based on type
           _buildFieldWidget(fieldKey, fieldType, fieldMeta, theme),
         ],
@@ -2184,7 +2144,12 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                   : optionText;
               
               return RadioListTile<String>(
-                title: Text(displayOption),
+                title: Text(
+                  displayOption,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withOpacity(0.85),
+                  ),
+                ),
 
                 value: optionText,
                 groupValue: isSelected ? optionText : null,
@@ -2236,7 +2201,12 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
               final isSelected = selectedValues.contains(optionText);
               
               return CheckboxListTile(
-                title: Text(optionText),
+                title: Text(
+                  optionText,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface.withOpacity(0.85),
+                  ),
+                ),
                 value: isSelected,
                 onChanged: (value) {
                   setState(() {
@@ -2293,6 +2263,10 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
         return DropdownButtonFormField<String>(
           value: currentValue,
           isExpanded: true, // Prevent overflow by allowing dropdown to expand
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.85),
+            height: 1.4,
+          ),
           decoration: InputDecoration(
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -2349,6 +2323,9 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                 overflow: TextOverflow.ellipsis,
                 maxLines: 2,
                 softWrap: true,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.85),
+                ),
               ),
             );
           }).toList(),
@@ -2364,8 +2341,9 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                 displayOption,
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
-                style: TextStyle(
-                  color: theme.colorScheme.onSurface,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.85),
+                  height: 1.4,
                 ),
               );
             }).toList();
@@ -2395,10 +2373,18 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
           controller: controller,
           focusNode: _getFieldFocusNode(fieldKey),
           maxLines: 5,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.85),
+            height: 1.4,
+          ),
           decoration: InputDecoration(
             hintText: _currentFormLanguage != 'en' && _translatedHints.containsKey(fieldKey)
                 ? _translatedHints[fieldKey]
                 : 'Enter ${_formatFieldLabel(fieldKey)}',
+            hintStyle: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.45),
+              height: 1.4,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: showError 
@@ -2449,10 +2435,18 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
           controller: controller,
           focusNode: _getFieldFocusNode(fieldKey),
           keyboardType: TextInputType.number,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.85),
+            height: 1.4,
+          ),
           decoration: InputDecoration(
             hintText: _currentFormLanguage != 'en' && _translatedHints.containsKey(fieldKey)
                 ? _translatedHints[fieldKey]
                 : 'Enter ${_formatFieldLabel(fieldKey)}',
+            hintStyle: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.45),
+              height: 1.4,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: showError 
@@ -2501,8 +2495,16 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
           controller: controller,
           focusNode: _getFieldFocusNode(fieldKey),
           readOnly: true,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.85),
+            height: 1.4,
+          ),
           decoration: InputDecoration(
-            hintText: 'Select ${fieldKey}',
+            hintText: 'Select ${_formatFieldLabel(fieldKey)}',
+            hintStyle: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.45),
+              height: 1.4,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: showError 
@@ -2595,8 +2597,16 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
           controller: controller,
           focusNode: _getFieldFocusNode(fieldKey),
           keyboardType: TextInputType.emailAddress,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.85),
+            height: 1.4,
+          ),
           decoration: InputDecoration(
-            hintText: 'Enter ${fieldKey}',
+            hintText: 'Enter ${_formatFieldLabel(fieldKey)}',
+            hintStyle: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.45),
+              height: 1.4,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: showError 
@@ -2648,8 +2658,16 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
           controller: controller,
           focusNode: _getFieldFocusNode(fieldKey),
           keyboardType: TextInputType.phone,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.85),
+            height: 1.4,
+          ),
           decoration: InputDecoration(
-            hintText: 'Enter ${fieldKey}',
+            hintText: 'Enter ${_formatFieldLabel(fieldKey)}',
+            hintStyle: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.45),
+              height: 1.4,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: showError 
@@ -2741,17 +2759,18 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
                         filePath != null 
                             ? filePath.split('/').last 
                             : 'Tap to upload file',
-                        style: TextStyle(
+                        style: theme.textTheme.bodyMedium?.copyWith(
                           color: filePath != null 
-                              ? theme.colorScheme.onSurface 
-                              : theme.colorScheme.onSurface.withOpacity(0.6),
+                              ? theme.colorScheme.onSurface.withOpacity(0.85) 
+                              : theme.colorScheme.onSurface.withOpacity(0.45),
                           fontWeight: filePath != null ? FontWeight.w500 : FontWeight.normal,
+                          height: 1.4,
                         ),
                       ),
                       if (showError)
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
-                          child: Text(
+                          child: const Text(
                             'This field is required',
                             style: TextStyle(
                               color: Colors.red,
@@ -2792,8 +2811,16 @@ class _ConversationalFormScreenState extends State<ConversationalFormScreen> {
         return TextField(
           controller: controller,
           focusNode: _getFieldFocusNode(fieldKey),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.85),
+            height: 1.4,
+          ),
           decoration: InputDecoration(
-            hintText: 'Enter ${fieldKey}',
+            hintText: 'Enter ${_formatFieldLabel(fieldKey)}',
+            hintStyle: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.45),
+              height: 1.4,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: showError 
